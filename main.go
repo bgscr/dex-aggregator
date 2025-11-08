@@ -36,7 +36,7 @@ func main() {
 		log.Fatalf("Failed to initialize mock data: %v", err)
 	}
 
-	router := aggregator.NewRouter(store)
+	router := aggregator.NewRouter(store, config.AppConfig.Performance)
 	handler := api.NewHandler(router, store)
 
 	r := mux.NewRouter()

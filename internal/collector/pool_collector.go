@@ -39,124 +39,207 @@ func NewMockPoolCollector(cache cache.Store) *MockPoolCollector {
 	}
 }
 
+// helper function to create big.Int from string
+func bigIntFromString(s string) *big.Int {
+	result, ok := new(big.Int).SetString(s, 10)
+	if !ok {
+		log.Printf("Warning: Failed to parse big int from string: %s", s)
+		return big.NewInt(0)
+	}
+	return result
+}
+
 func (mpc *MockPoolCollector) InitMockPools() error {
 	ctx := context.Background()
 
-	majorPairs := []struct {
-		name   string
-		token0 types.Token
-		token1 types.Token
-	}{
-		{
-			name: "WETH/USDT",
-			token0: types.Token{
-				Address:  "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
-				Symbol:   "WETH",
-				Decimals: 18,
-			},
-			token1: types.Token{
-				Address:  "0xdac17f958d2ee523a2206206994597c13d831ec7",
-				Symbol:   "USDT",
-				Decimals: 6,
-			},
+	// 扩展代币列表
+	tokens := map[string]types.Token{
+		"WETH": {
+			Address:  "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+			Symbol:   "WETH",
+			Decimals: 18,
 		},
-		{
-			name: "WETH/USDC",
-			token0: types.Token{
-				Address:  "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
-				Symbol:   "WETH",
-				Decimals: 18,
-			},
-			token1: types.Token{
-				Address:  "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
-				Symbol:   "USDC",
-				Decimals: 6,
-			},
+		"USDT": {
+			Address:  "0xdac17f958d2ee523a2206206994597c13d831ec7",
+			Symbol:   "USDT",
+			Decimals: 6,
 		},
-		{
-			name: "WETH/DAI",
-			token0: types.Token{
-				Address:  "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
-				Symbol:   "WETH",
-				Decimals: 18,
-			},
-			token1: types.Token{
-				Address:  "0x6b175474e89094c44da98b954eedeac495271d0f",
-				Symbol:   "DAI",
-				Decimals: 18,
-			},
+		"USDC": {
+			Address:  "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+			Symbol:   "USDC",
+			Decimals: 6,
 		},
-		{
-			name: "USDC/USDT",
-			token0: types.Token{
-				Address:  "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
-				Symbol:   "USDC",
-				Decimals: 6,
-			},
-			token1: types.Token{
-				Address:  "0xdac17f958d2ee523a2206206994597c13d831ec7",
-				Symbol:   "USDT",
-				Decimals: 6,
-			},
+		"DAI": {
+			Address:  "0x6b175474e89094c44da98b954eedeac495271d0f",
+			Symbol:   "DAI",
+			Decimals: 18,
+		},
+		"WBTC": {
+			Address:  "0x2260fac5e5542a773aa44fbcfedf7c193bc2c599",
+			Symbol:   "WBTC",
+			Decimals: 8,
+		},
+		"LINK": {
+			Address:  "0x514910771af9ca656af840dff83e8264ecf986ca",
+			Symbol:   "LINK",
+			Decimals: 18,
+		},
+		"UNI": {
+			Address:  "0x1f9840a85d5af5bf1d1762f925bdaddc4201f984",
+			Symbol:   "UNI",
+			Decimals: 18,
+		},
+		"AAVE": {
+			Address:  "0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9",
+			Symbol:   "AAVE",
+			Decimals: 18,
 		},
 	}
 
+	// 扩展交易对
+	pairs := []struct {
+		name     string
+		token0   types.Token
+		token1   types.Token
+		reserve0 *big.Int
+		reserve1 *big.Int
+	}{
+		// 主要稳定币对
+		{
+			name:     "WETH/USDT",
+			token0:   tokens["WETH"],
+			token1:   tokens["USDT"],
+			reserve0: bigIntFromString("10000000000000000000"), // 10 WETH
+			reserve1: big.NewInt(20000000000),                  // 20,000 USDT
+		},
+		{
+			name:     "WETH/USDC",
+			token0:   tokens["WETH"],
+			token1:   tokens["USDC"],
+			reserve0: bigIntFromString("500000000000000000000"), // 500 WETH
+			reserve1: big.NewInt(100000000000),                  // 1,000,000 USDC
+		},
+		{
+			name:     "WETH/DAI",
+			token0:   tokens["WETH"],
+			token1:   tokens["DAI"],
+			reserve0: bigIntFromString("3000000000000000000"),    // 3 WETH
+			reserve1: bigIntFromString("6000000000000000000000"), // 6000 DAI
+		},
+		// 稳定币间交易对
+		{
+			name:     "USDC/USDT",
+			token0:   tokens["USDC"],
+			token1:   tokens["USDT"],
+			reserve0: big.NewInt(5000000000), // 5,000 USDC
+			reserve1: big.NewInt(5000000000), // 5,000 USDT
+		},
+		{
+			name:     "USDC/DAI",
+			token0:   tokens["USDC"],
+			token1:   tokens["DAI"],
+			reserve0: big.NewInt(3000000000),                     // 3,000 USDC
+			reserve1: bigIntFromString("3000000000000000000000"), // 3000 DAI
+		},
+		// WBTC 交易对
+		{
+			name:     "WETH/WBTC",
+			token0:   tokens["WETH"],
+			token1:   tokens["WBTC"],
+			reserve0: bigIntFromString("50000000000000000000"), // 50 WETH
+			reserve1: big.NewInt(200000000),                    // 2 WBTC
+		},
+		{
+			name:     "WBTC/USDT",
+			token0:   tokens["WBTC"],
+			token1:   tokens["USDT"],
+			reserve0: big.NewInt(100000000),   // 1 WBTC
+			reserve1: big.NewInt(30000000000), // 30,000 USDT
+		},
+		// 其他代币对
+		{
+			name:     "WETH/LINK",
+			token0:   tokens["WETH"],
+			token1:   tokens["LINK"],
+			reserve0: bigIntFromString("2000000000000000000"),    // 2 WETH
+			reserve1: bigIntFromString("2000000000000000000000"), // 2000 LINK
+		},
+		{
+			name:     "WETH/UNI",
+			token0:   tokens["WETH"],
+			token1:   tokens["UNI"],
+			reserve0: bigIntFromString("1000000000000000000"),   // 1 WETH
+			reserve1: bigIntFromString("500000000000000000000"), // 500 UNI
+		},
+		{
+			name:     "WETH/AAVE",
+			token0:   tokens["WETH"],
+			token1:   tokens["AAVE"],
+			reserve0: bigIntFromString("800000000000000000"),   // 0.8 WETH
+			reserve1: bigIntFromString("40000000000000000000"), // 40 AAVE
+		},
+		// 三跳路径需要的交易对
+		{
+			name:     "LINK/USDT",
+			token0:   tokens["LINK"],
+			token1:   tokens["USDT"],
+			reserve0: bigIntFromString("5000000000000000000000"), // 5000 LINK
+			reserve1: big.NewInt(2500000000),                     // 2,500 USDT
+		},
+		{
+			name:     "UNI/USDC",
+			token0:   tokens["UNI"],
+			token1:   tokens["USDC"],
+			reserve0: bigIntFromString("1000000000000000000000"), // 1000 UNI
+			reserve1: big.NewInt(2000000000),                     // 2,000 USDC
+		},
+		// 在 pairs 数组中增加更高流动性的池子
+		{
+			name:     "WETH/USDT-HighLiquidity",
+			token0:   tokens["WETH"],
+			token1:   tokens["USDT"],
+			reserve0: bigIntFromString("100000000000000000000"), // 100 WETH
+			reserve1: big.NewInt(200000000000),                  // 200,000 USDT
+		},
+	}
+
+	// 为每个交易所创建池子
+	uniquePools := make(map[string]bool)
 	poolCount := 0
 	for _, exchange := range mpc.exchanges {
-		for i, pair := range majorPairs {
+		for i, pair := range pairs {
+
+			poolAddress := fmt.Sprintf("%s-%s-%d",
+				strings.ToLower(strings.ReplaceAll(exchange.Name, " ", "")),
+				strings.ToLower(strings.ReplaceAll(pair.name, "/", "-")),
+				i)
+			if uniquePools[poolAddress] {
+				continue
+			}
+			uniquePools[poolAddress] = true
+
 			pool := &types.Pool{
-				Address:     fmt.Sprintf("%s-pool-%s-%d", strings.ToLower(strings.ReplaceAll(exchange.Name, " ", "")), pair.name, i),
+				Address:     fmt.Sprintf("%s-%s-%d", strings.ToLower(strings.ReplaceAll(exchange.Name, " ", "")), strings.ToLower(strings.ReplaceAll(pair.name, "/", "-")), i),
 				Exchange:    exchange.Name,
 				Version:     exchange.Version,
 				Token0:      pair.token0,
 				Token1:      pair.token1,
-				Reserve0:    big.NewInt(1000000000000000000), // 1 ETH
-				Reserve1:    big.NewInt(2000000000),          // 2000 USDT/USDC
+				Reserve0:    pair.reserve0,
+				Reserve1:    pair.reserve1,
 				Fee:         300,
 				LastUpdated: time.Now(),
-			}
-
-			// Adjust reserves based on token pair
-			switch pair.name {
-			case "WETH/USDT", "WETH/USDC":
-				// These are fine with default values
-				pool.Reserve1 = big.NewInt(2000000000)
-			case "WETH/DAI":
-				// Fix: 2000 DAI = 2000 * 10^18
-				pool.Reserve1 = new(big.Int).Mul(big.NewInt(2000), new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil))
-			case "USDC/USDT":
-				pool.Reserve0 = big.NewInt(1000000000) // 1000 USDC
-				pool.Reserve1 = big.NewInt(1000000000) // 1000 USDT
 			}
 
 			err := mpc.cache.StorePool(ctx, pool)
 			if err != nil {
 				log.Printf("Failed to store pool: %v", err)
 			} else {
-				log.Printf("✓ Created %s pool: %s (Reserves: %s/%s)",
-					exchange.Name, pair.name,
-					pool.Reserve0.String(), pool.Reserve1.String())
+				log.Printf("✓ Created %s pool: %s", exchange.Name, pair.name)
 				poolCount++
 			}
 		}
 	}
 
-	log.Printf("Successfully created %d mock pools", poolCount)
-
-	// Verify pools were stored correctly
-	allPools, err := mpc.cache.GetAllPools(ctx)
-	if err != nil {
-		log.Printf("Failed to get pools for verification: %v", err)
-	} else {
-		log.Printf("Verification: %d pools now in cache", len(allPools))
-
-		// Debug: print token addresses to verify they're lowercase
-		for _, pool := range allPools {
-			log.Printf("Pool tokens: %s (%s) / %s (%s)",
-				pool.Token0.Symbol, pool.Token0.Address,
-				pool.Token1.Symbol, pool.Token1.Address)
-		}
-	}
-
+	log.Printf("Successfully created %d mock pools across %d exchanges", poolCount, len(mpc.exchanges))
 	return nil
 }

@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"dex-aggregator/config"
 	"dex-aggregator/internal/cache"
 	"dex-aggregator/internal/types"
 )
@@ -21,12 +22,16 @@ type Router struct {
 	maxConcurrent int
 }
 
-func NewRouter(cache cache.Store) *Router {
+func NewRouter(cache cache.Store, perfConfig config.PerformanceConfig) *Router {
+	calculator := NewPriceCalculator()
+	// 使用配置中的值覆盖默认值
+	calculator.SetMaxSlippage(perfConfig.MaxSlippage)
+
 	return &Router{
 		cache:         cache,
 		pathFinder:    NewPathFinder(cache),
-		calculator:    NewPriceCalculator(),
-		maxConcurrent: 10, // Limit concurrent path calculations
+		calculator:    calculator,
+		maxConcurrent: perfConfig.MaxConcurrentPaths,
 	}
 }
 
@@ -38,9 +43,32 @@ func (r *Router) GetBestQuote(ctx context.Context, req *types.QuoteRequest) (*ty
 	tokenIn := strings.ToLower(req.TokenIn)
 	tokenOut := strings.ToLower(req.TokenOut)
 
+	log.Printf("Normalized tokens: %s -> %s", tokenIn, tokenOut)
+	// 获取所有池子进行检查
+	allPools, err := r.cache.GetAllPools(ctx)
+	if err != nil {
+		log.Printf("Failed to get all pools: %v", err)
+	} else {
+		log.Printf("Total pools in cache: %d", len(allPools))
+
+		// 检查是否有相关的池子
+		relatedPools := 0
+		for _, pool := range allPools {
+			poolToken0 := strings.ToLower(pool.Token0.Address)
+			poolToken1 := strings.ToLower(pool.Token1.Address)
+			if (poolToken0 == tokenIn || poolToken1 == tokenIn) &&
+				(poolToken0 == tokenOut || poolToken1 == tokenOut) {
+				relatedPools++
+				log.Printf("Found direct pool: %s, %s/%s, reserves: %s/%s",
+					pool.Address, pool.Token0.Symbol, pool.Token1.Symbol,
+					pool.Reserve0.String(), pool.Reserve1.String())
+			}
+		}
+		log.Printf("Found %d direct pools for %s->%s", relatedPools, tokenIn, tokenOut)
+	}
+
 	// Use optimized path finding that prioritizes high-liquidity routes
 	var paths [][]*types.Pool
-	var err error
 
 	if req.MaxHops == 0 {
 		req.MaxHops = 3
@@ -108,6 +136,13 @@ func (r *Router) calculatePathsConcurrently(ctx context.Context, paths [][]*type
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
+			log.Printf("Calculating path %d with %d pools", pathIndex+1, len(p))
+			for j, pool := range p {
+				log.Printf("  Pool %d: %s, %s/%s, reserves: %s/%s",
+					j+1, pool.Exchange, pool.Token0.Symbol, pool.Token1.Symbol,
+					pool.Reserve0.String(), pool.Reserve1.String())
+			}
+
 			amountOut, err := r.calculator.CalculatePathOutput(p, req.AmountIn, tokenIn, tokenOut)
 			if err != nil {
 				log.Printf("Path %d calculation failed: %v", pathIndex+1, err)
@@ -115,18 +150,20 @@ func (r *Router) calculatePathsConcurrently(ctx context.Context, paths [][]*type
 				return
 			}
 
+			log.Printf("Path %d raw output: %s", pathIndex+1, amountOut.String())
+
 			if amountOut.Cmp(big.NewInt(0)) <= 0 {
 				return
 			}
 
 			gasCost := r.estimateGasCost(p)
 
-			// Check if the path is profitable after gas
-			netAmount := new(big.Int).Sub(amountOut, gasCost)
-			if netAmount.Cmp(big.NewInt(0)) <= 0 {
-				log.Printf("Path %d not profitable after gas costs", pathIndex+1)
-				return
-			}
+			// TODO: 修复 Gas 成本计算逻辑
+			// netAmount := new(big.Int).Sub(amountOut, gasCost)
+			// if netAmount.Cmp(big.NewInt(0)) <= 0 {
+			// 	log.Printf("Path %d not profitable after gas costs", pathIndex+1)
+			// 	return
+			// }
 
 			tradePath := &types.TradePath{
 				Pools:     p,
@@ -168,23 +205,13 @@ func (r *Router) findOptimalPath(tradePaths []*types.TradePath) *types.TradePath
 		return nil
 	}
 
-	// Sort by raw output amount first
+	// 按原始输出金额排序 (最高优先)
 	sort.Slice(tradePaths, func(i, j int) bool {
 		return tradePaths[i].AmountOut.Cmp(tradePaths[j].AmountOut) > 0
 	})
 
+	// 返回输出最高的路径
 	bestPath := tradePaths[0]
-
-	// Then check if any path has better net amount (after gas)
-	for i := 1; i < len(tradePaths) && i < 5; i++ { // Only check top 5 to avoid micro-optimization
-		currentNet := new(big.Int).Sub(tradePaths[i].AmountOut, tradePaths[i].GasCost)
-		bestNet := new(big.Int).Sub(bestPath.AmountOut, bestPath.GasCost)
-
-		if currentNet.Cmp(bestNet) > 0 {
-			bestPath = tradePaths[i]
-		}
-	}
-
 	return bestPath
 }
 

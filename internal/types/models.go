@@ -104,6 +104,41 @@ func (q *QuoteResponse) MarshalJSON() ([]byte, error) {
 	})
 }
 
+// UnmarshalJSON custom unmarshaler for QuoteResponse to handle big.Int
+func (q *QuoteResponse) UnmarshalJSON(data []byte) error {
+	type Alias QuoteResponse
+	aux := &struct {
+		AmountOut   string `json:"amountOut"`
+		GasEstimate string `json:"gasEstimate"`
+		*Alias
+	}{
+		Alias: (*Alias)(q),
+	}
+
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	// Convert strings to big.Int
+	if aux.AmountOut != "" {
+		amountOut, ok := new(big.Int).SetString(aux.AmountOut, 10)
+		if !ok {
+			return fmt.Errorf("invalid amountOut format: %s", aux.AmountOut)
+		}
+		q.AmountOut = amountOut
+	}
+
+	if aux.GasEstimate != "" {
+		gasEstimate, ok := new(big.Int).SetString(aux.GasEstimate, 10)
+		if !ok {
+			return fmt.Errorf("invalid gasEstimate format: %s", aux.GasEstimate)
+		}
+		q.GasEstimate = gasEstimate
+	}
+
+	return nil
+}
+
 // TradePath trading path
 type TradePath struct {
 	Pools     []*Pool  `json:"pools"`

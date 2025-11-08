@@ -2,7 +2,9 @@ package aggregator
 
 import (
 	"fmt"
+	"log"
 	"math/big"
+	"strings"
 
 	"dex-aggregator/internal/types"
 )
@@ -13,7 +15,7 @@ type PriceCalculator struct {
 
 func NewPriceCalculator() *PriceCalculator {
 	return &PriceCalculator{
-		maxSlippage: 5.0, // 5% maximum slippage
+		maxSlippage: 5.0,
 	}
 }
 
@@ -21,22 +23,33 @@ func NewPriceCalculator() *PriceCalculator {
 func (pc *PriceCalculator) CalculateOutput(pool *types.Pool, amountIn *big.Int, tokenIn string) (*big.Int, error) {
 	var reserveIn, reserveOut *big.Int
 
-	if pool.Token0.Address == tokenIn {
+	poolToken0 := strings.ToLower(pool.Token0.Address)
+	poolToken1 := strings.ToLower(pool.Token1.Address)
+	tokenInLower := strings.ToLower(tokenIn)
+
+	log.Printf("CalculateOutput: pool %s, tokens: %s/%s, input token: %s",
+		pool.Address, poolToken0, poolToken1, tokenInLower)
+
+	if poolToken0 == tokenInLower {
 		reserveIn = pool.Reserve0
 		reserveOut = pool.Reserve1
-	} else if pool.Token1.Address == tokenIn {
+		log.Printf("Token0 match, reserves: in=%s, out=%s", reserveIn.String(), reserveOut.String())
+	} else if poolToken1 == tokenInLower {
 		reserveIn = pool.Reserve1
 		reserveOut = pool.Reserve0
+		log.Printf("Token1 match, reserves: in=%s, out=%s", reserveIn.String(), reserveOut.String())
 	} else {
+		log.Printf("Token %s not found in pool", tokenIn)
 		return big.NewInt(0), fmt.Errorf("token %s not found in pool", tokenIn)
 	}
 
 	if reserveIn.Cmp(big.NewInt(0)) == 0 || reserveOut.Cmp(big.NewInt(0)) == 0 {
+		log.Printf("Zero reserves: in=%s, out=%s", reserveIn.String(), reserveOut.String())
 		return big.NewInt(0), nil
 	}
 
-	// Check if the trade would cause too much slippage
 	if err := pc.checkSlippage(reserveIn, reserveOut, amountIn); err != nil {
+		log.Printf("Slippage check failed: %v", err)
 		return big.NewInt(0), err
 	}
 
@@ -50,10 +63,13 @@ func (pc *PriceCalculator) CalculateOutput(pool *types.Pool, amountIn *big.Int, 
 	denominator.Add(denominator, amountInWithFee)
 
 	if denominator.Cmp(big.NewInt(0)) == 0 {
+		log.Printf("Zero denominator")
 		return big.NewInt(0), nil
 	}
 
 	amountOut := new(big.Int).Div(numerator, denominator)
+
+	log.Printf("Calculation: amountIn=%s, amountOut=%s", amountIn.String(), amountOut.String())
 
 	return amountOut, nil
 }
@@ -106,33 +122,34 @@ func (pc *PriceCalculator) CalculatePathOutput(pools []*types.Pool, amountIn *bi
 	}
 
 	currentAmount := new(big.Int).Set(amountIn)
-	currentToken := tokenIn
+	currentToken := strings.ToLower(tokenIn)
+	tokenOutLower := strings.ToLower(tokenOut)
 
 	for i, pool := range pools {
-		var inputToken string
-
-		if i == 0 {
-			inputToken = tokenIn
-		} else {
-			inputToken = currentToken
-		}
+		inputToken := currentToken
 
 		amountOut, err := pc.CalculateOutput(pool, currentAmount, inputToken)
 		if err != nil {
 			return big.NewInt(0), fmt.Errorf("pool %d calculation failed: %v", i, err)
 		}
 
-		if pool.Token0.Address == inputToken {
-			currentToken = pool.Token1.Address
+		poolToken0Lower := strings.ToLower(pool.Token0.Address)
+		poolToken1Lower := strings.ToLower(pool.Token1.Address)
+		inputTokenLower := strings.ToLower(inputToken)
+
+		if poolToken0Lower == inputTokenLower {
+			currentToken = poolToken1Lower
+		} else if poolToken1Lower == inputTokenLower {
+			currentToken = poolToken0Lower
 		} else {
-			currentToken = pool.Token0.Address
+			return big.NewInt(0), fmt.Errorf("token %s not found in pool %s", inputToken, pool.Address)
 		}
 
 		currentAmount = amountOut
 
 		if i == len(pools)-1 {
-			if currentToken != tokenOut {
-				return big.NewInt(0), fmt.Errorf("final output token %s does not match requested tokenOut %s", currentToken, tokenOut)
+			if currentToken != tokenOutLower {
+				return big.NewInt(0), fmt.Errorf("final output token %s does not match requested tokenOut %s", currentToken, tokenOutLower)
 			}
 		}
 	}
@@ -151,37 +168,82 @@ func (pc *PriceCalculator) checkSlippageWithLimit(reserveIn, reserveOut, amountI
 		return nil
 	}
 
-	// Calculate price impact
-	reserveInFloat := new(big.Float).SetInt(reserveIn)
-	reserveOutFloat := new(big.Float).SetInt(reserveOut)
-	amountInFloat := new(big.Float).SetInt(amountIn)
+	// 1. 转换为浮点数以便高精度计算
+	fReserveIn := new(big.Float).SetInt(reserveIn)
+	fReserveOut := new(big.Float).SetInt(reserveOut)
+	fAmountIn := new(big.Float).SetInt(amountIn)
 
-	// Original price
-	originalPrice := new(big.Float).Quo(reserveOutFloat, reserveInFloat)
-
-	// New reserves after trade
-	newReserveIn := new(big.Float).Add(reserveInFloat, amountInFloat)
-	feeAdjustedAmount := new(big.Float).Mul(amountInFloat, big.NewFloat(0.997)) // 0.3% fee
-	newReserveOut := new(big.Float).Sub(reserveOutFloat, new(big.Float).Mul(originalPrice, feeAdjustedAmount))
-
-	if newReserveOut.Sign() <= 0 {
-		return fmt.Errorf("insufficient liquidity after trade")
+	// 2. 检查除零
+	if fReserveIn.Cmp(big.NewFloat(0)) == 0 {
+		log.Printf("Slippage check: zero reserveIn")
+		return fmt.Errorf("zero reserveIn")
 	}
 
-	// New price
-	newPrice := new(big.Float).Quo(newReserveOut, newReserveIn)
+	// 3. 计算交易前价格 (Spot Price)
+	// spotPrice = reserveOut / reserveIn
+	spotPrice := new(big.Float).Quo(fReserveOut, fReserveIn)
+	if spotPrice.Cmp(big.NewFloat(0)) == 0 {
+		return fmt.Errorf("zero spot price")
+	}
 
-	// Calculate slippage
-	priceRatio := new(big.Float).Quo(newPrice, originalPrice)
-	slippage := new(big.Float).Sub(big.NewFloat(1.0), priceRatio)
-	slippagePercent, _ := slippage.Float64()
-	slippagePercent = slippagePercent * 100 // Convert to percentage
+	// 4. 计算实际收到的 amountOut (包含手续费)
+	amountOut := calculateOutputWithFee(reserveIn, reserveOut, amountIn)
+	fAmountOut := new(big.Float).SetInt(amountOut)
 
+	// 5. 计算有效价格 (Effective Price)
+	// effectivePrice = amountOut / amountIn
+	if fAmountIn.Cmp(big.NewFloat(0)) == 0 {
+		return fmt.Errorf("zero amountIn")
+	}
+	effectivePrice := new(big.Float).Quo(fAmountOut, fAmountIn)
+
+	// 6. 计算价格冲击 (Price Impact)
+	// impact = (spotPrice - effectivePrice) / spotPrice
+	priceImpact := new(big.Float).Sub(spotPrice, effectivePrice)
+	priceImpactRatio := new(big.Float).Quo(priceImpact, spotPrice)
+
+	// 7. 转换为百分比
+	slippagePercent, _ := priceImpactRatio.Float64()
+	slippagePercent = slippagePercent * 100
+
+	log.Printf("Slippage check: Spot=%.6f, Eff=%.6f, Impact=%.2f%% (Max: %.2f%%)",
+		spotPrice, effectivePrice, slippagePercent, maxSlippage)
+
+	// 8. 检查是否超过最大允许滑点
 	if slippagePercent > maxSlippage {
 		return fmt.Errorf("slippage too high: %.2f%% (max: %.2f%%)", slippagePercent, maxSlippage)
 	}
 
+	log.Printf("Slippage check passed: %.2f%%", slippagePercent)
 	return nil
+}
+
+func calculateOutputWithoutFee(reserveIn, reserveOut, amountIn *big.Int) *big.Int {
+	numerator := new(big.Int).Mul(reserveOut, amountIn)
+	denominator := new(big.Int).Add(reserveIn, amountIn)
+
+	if denominator.Cmp(big.NewInt(0)) == 0 {
+		return big.NewInt(0)
+	}
+
+	return new(big.Int).Div(numerator, denominator)
+}
+
+func calculateOutputWithFee(reserveIn, reserveOut, amountIn *big.Int) *big.Int {
+	fee := big.NewInt(997)
+	thousand := big.NewInt(1000)
+
+	amountInWithFee := new(big.Int).Mul(amountIn, fee)
+	numerator := new(big.Int).Mul(reserveOut, amountInWithFee)
+
+	denominator := new(big.Int).Mul(reserveIn, thousand)
+	denominator.Add(denominator, amountInWithFee)
+
+	if denominator.Cmp(big.NewInt(0)) == 0 {
+		return big.NewInt(0)
+	}
+
+	return new(big.Int).Div(numerator, denominator)
 }
 
 // SetMaxSlippage updates the maximum allowed slippage

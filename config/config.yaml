@@ -1,0 +1,30 @@
+server:
+  port: 8080
+  read_timeout: 15
+  write_timeout: 15
+
+redis:
+  addr: "localhost:6379"
+  password: ""
+  db: 0
+
+ethereum:
+  rpc_url: "wss://mainnet.infura.io/ws/v3/YOUR-PROJECT-ID"
+  chain_id: 1
+
+dex:
+  exchanges:
+    - name: "Uniswap V2"
+      factory: "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f"
+      router: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D"
+      version: "v2"
+    - name: "SushiSwap"
+      factory: "0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac"
+      router: "0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F"
+      version: "v2"
+
+base_tokens:
+  - "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2" # WETH
+  - "0xdAC17F958D2ee523a2206206994597C13D831ec7" # USDT
+  - "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" # USDC
+  - "0x6B175474E89094C44Da98b954EedeAC495271d0F" # DAI

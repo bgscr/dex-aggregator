@@ -11,10 +11,10 @@ import (
 )
 
 func TestTwoLevelCache_StoreAndGetPool(t *testing.T) {
-	// 使用真实的两级缓存，但使用内存存储模拟 Redis
-	// 在实际环境中，这应该连接到测试 Redis 实例
+	// Use real two-level cache, but use memory store to simulate Redis
+	// In real environment, this should connect to test Redis instance
 	tlc := NewTwoLevelCache(
-		"localhost:6379", // 测试 Redis 地址
+		"localhost:6379", // Test Redis address
 		"",
 		time.Minute*5,
 	)
@@ -28,14 +28,14 @@ func TestTwoLevelCache_StoreAndGetPool(t *testing.T) {
 		Reserve1: big.NewInt(2000000),
 	}
 
-	// 测试存储 - 由于 Redis 可能不可用，我们主要测试本地缓存部分
+	// Test storage - since Redis might be unavailable, we mainly test local cache part
 	err := tlc.StorePool(context.Background(), pool)
-	// 如果 Redis 不可用，可能返回错误，但我们仍然验证本地缓存
+	// If Redis is unavailable, may return error, but we still verify local cache
 	if err != nil {
 		t.Logf("Redis store failed (expected in test environment): %v", err)
 	}
 
-	// 验证本地缓存中有数据
+	// Verify local cache has data
 	localPool, err := tlc.localCache.GetPool(context.Background(), "test-pool")
 	assert.NoError(t, err)
 	assert.Equal(t, pool.Address, localPool.Address)
@@ -44,19 +44,19 @@ func TestTwoLevelCache_StoreAndGetPool(t *testing.T) {
 func TestTwoLevelCache_GetPool_LocalCacheHit(t *testing.T) {
 	tlc := NewTwoLevelCache("localhost:6379", "", time.Minute*5)
 
-	// 先在本地缓存中存储数据
+	// First store data in local cache
 	pool := &types.Pool{
 		Address:  "local-pool",
 		Exchange: "Uniswap V2",
 	}
 	tlc.localCache.StorePool(context.Background(), pool)
 
-	// 测试获取 - 应该命中本地缓存
+	// Test get - should hit local cache
 	retrievedPool, err := tlc.GetPool(context.Background(), "local-pool")
 	assert.NoError(t, err)
 	assert.Equal(t, pool.Address, retrievedPool.Address)
 
-	// 验证统计信息
+	// Verify statistics
 	stats := tlc.GetStats()
 	assert.Equal(t, int64(1), stats.LocalHits)
 }
@@ -74,21 +74,21 @@ func TestMemoryStore_BasicOperations(t *testing.T) {
 		Reserve1: big.NewInt(2000000),
 	}
 
-	// 测试存储
+	// Test storage
 	err := store.StorePool(ctx, pool)
 	assert.NoError(t, err)
 
-	// 测试获取
+	// Test retrieval
 	retrievedPool, err := store.GetPool(ctx, "test-pool")
 	assert.NoError(t, err)
 	assert.Equal(t, pool.Address, retrievedPool.Address)
 
-	// 测试通过代币对获取
+	// Test get by token pair
 	pools, err := store.GetPoolsByTokens(ctx, "0xtokena", "0xtokenb")
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(pools))
 
-	// 测试获取所有池子
+	// Test get all pools
 	allPools, err := store.GetAllPools(ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, len(allPools))
@@ -113,11 +113,11 @@ func TestMemoryStore_TokenOperations(t *testing.T) {
 		Decimals: 18,
 	}
 
-	// 存储 token（当前实现为空操作）
+	// Store token (current implementation is no-op)
 	err := store.StoreToken(ctx, token)
 	assert.NoError(t, err)
 
-	// 获取 token（返回默认值）
+	// Get token (returns default)
 	retrievedToken, err := store.GetToken(ctx, "0xtoken")
 	assert.NoError(t, err)
 	assert.Equal(t, "UNKNOWN", retrievedToken.Symbol)
@@ -136,7 +136,7 @@ func TestMemoryStore_ConcurrentAccess(t *testing.T) {
 		Reserve1: big.NewInt(2000000),
 	}
 
-	// 并发存储
+	// Concurrent storage
 	done := make(chan bool, 10)
 	for i := 0; i < 10; i++ {
 		go func() {
@@ -146,12 +146,12 @@ func TestMemoryStore_ConcurrentAccess(t *testing.T) {
 		}()
 	}
 
-	// 等待所有 goroutine 完成
+	// Wait for all goroutines to complete
 	for i := 0; i < 10; i++ {
 		<-done
 	}
 
-	// 验证数据一致性
+	// Verify data consistency
 	retrievedPool, err := store.GetPool(ctx, "concurrent-pool")
 	assert.NoError(t, err)
 	assert.Equal(t, pool.Address, retrievedPool.Address)
@@ -161,7 +161,7 @@ func TestMemoryStore_ConcurrentAccessSafe(t *testing.T) {
 	store := NewMemoryStore()
 	ctx := context.Background()
 
-	// 创建不同的池子以避免重复存储问题
+	// Create different pools to avoid duplicate storage issues
 	pools := []*types.Pool{
 		{
 			Address:  "concurrent-pool-1",
@@ -189,7 +189,7 @@ func TestMemoryStore_ConcurrentAccessSafe(t *testing.T) {
 		},
 	}
 
-	// 并发存储不同的池子
+	// Concurrently store different pools
 	done := make(chan bool, len(pools))
 	for i, pool := range pools {
 		go func(p *types.Pool, index int) {
@@ -199,19 +199,19 @@ func TestMemoryStore_ConcurrentAccessSafe(t *testing.T) {
 		}(pool, i)
 	}
 
-	// 等待所有 goroutine 完成
+	// Wait for all goroutines to complete
 	for i := 0; i < len(pools); i++ {
 		<-done
 	}
 
-	// 验证所有池子都被正确存储
+	// Verify all pools were stored correctly
 	for _, pool := range pools {
 		retrievedPool, err := store.GetPool(ctx, pool.Address)
 		assert.NoError(t, err)
 		assert.Equal(t, pool.Address, retrievedPool.Address)
 	}
 
-	// 验证总池子数量
+	// Verify total pool count
 	allPools, err := store.GetAllPools(ctx)
 	assert.NoError(t, err)
 	assert.Equal(t, len(pools), len(allPools))

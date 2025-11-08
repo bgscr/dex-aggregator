@@ -48,7 +48,7 @@ func TestPoolModel(t *testing.T) {
 }
 
 func TestQuoteRequestJSON(t *testing.T) {
-	// 测试 JSON 序列化和反序列化
+	// Test JSON serialization and deserialization
 	req := &QuoteRequest{
 		TokenIn:  "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
 		TokenOut: "0xdac17f958d2ee523a2206206994597c13d831ec7",
@@ -56,11 +56,11 @@ func TestQuoteRequestJSON(t *testing.T) {
 		MaxHops:  3,
 	}
 
-	// 序列化
+	// Serialize
 	data, err := json.Marshal(req)
 	assert.NoError(t, err)
 
-	// 反序列化
+	// Deserialize
 	var newReq QuoteRequest
 	err = json.Unmarshal(data, &newReq)
 	assert.NoError(t, err)
@@ -90,7 +90,7 @@ func TestPoolJSON(t *testing.T) {
 }
 
 func TestInvalidBigIntJSON(t *testing.T) {
-	// 测试无效的 big.Int 格式
+	// Test invalid big.Int format
 	invalidJSON := `{
 		"tokenIn": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
 		"tokenOut": "0xdac17f958d2ee523a2206206994597c13d831ec7",
@@ -102,7 +102,7 @@ func TestInvalidBigIntJSON(t *testing.T) {
 	assert.Error(t, err)
 }
 
-// 在文件末尾添加这个测试函数
+// Add this test function at the end of the file
 func TestQuoteResponseJSON(t *testing.T) {
 	resp := &QuoteResponse{
 		AmountOut:      big.NewInt(200000000), // 200 USDT
@@ -110,11 +110,11 @@ func TestQuoteResponseJSON(t *testing.T) {
 		ProcessingTime: 50,
 	}
 
-	// 只测试序列化，不测试反序列化（因为我们的自定义序列化器可能不完整）
+	// Only test serialization, not deserialization (our custom serializer might be incomplete)
 	data, err := json.Marshal(resp)
 	assert.NoError(t, err)
 
-	// 验证序列化后的数据包含正确的字段
+	// Verify serialized data contains correct fields
 	var jsonData map[string]interface{}
 	err = json.Unmarshal(data, &jsonData)
 	assert.NoError(t, err)

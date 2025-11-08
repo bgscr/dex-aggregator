@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-// MockStore 用于测试
+// MockStore for testing
 type MockStore struct {
 	mock.Mock
 }
@@ -60,25 +60,25 @@ func (m *MockStore) GetToken(ctx context.Context, address string) (*types.Token,
 
 func TestPriceCalculator_CalculateOutput(t *testing.T) {
 	calculator := NewPriceCalculator()
-	calculator.SetMaxSlippage(5.0) // 临时提高滑点限制用于测试
+	calculator.SetMaxSlippage(5.0) // Temporarily increase slippage limit for testing
 
 	pool := &types.Pool{
 		Token0:   types.Token{Address: "0xTokenA"},
 		Token1:   types.Token{Address: "0xTokenB"},
-		Reserve0: big.NewInt(1000000000), // 更大的储备以减少滑点
+		Reserve0: big.NewInt(1000000000), // Larger reserves to reduce slippage
 		Reserve1: big.NewInt(2000000000),
 	}
 
-	// 使用较小的输入金额来避免滑点错误
+	// Use smaller input amount to avoid slippage errors
 	amountOut, err := calculator.CalculateOutput(pool, big.NewInt(1000), "0xTokenA")
 	assert.NoError(t, err)
 	assert.True(t, amountOut.Cmp(big.NewInt(0)) > 0)
 
-	// 测试 token 不存在的情况
+	// Test non-existent token
 	_, err = calculator.CalculateOutput(pool, big.NewInt(1000), "0xInvalidToken")
 	assert.Error(t, err)
 
-	// 测试零储备的情况
+	// Test zero reserves
 	zeroPool := &types.Pool{
 		Token0:   types.Token{Address: "0xTokenA"},
 		Token1:   types.Token{Address: "0xTokenB"},
@@ -92,7 +92,7 @@ func TestPriceCalculator_CalculateOutput(t *testing.T) {
 
 func TestPriceCalculator_CalculatePathOutput(t *testing.T) {
 	calculator := NewPriceCalculator()
-	calculator.SetMaxSlippage(5.0) // 临时提高滑点限制
+	calculator.SetMaxSlippage(5.0) // Temporarily increase slippage limit
 
 	pools := []*types.Pool{
 		{
@@ -113,7 +113,7 @@ func TestPriceCalculator_CalculatePathOutput(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, amountOut.Cmp(big.NewInt(0)) > 0)
 
-	// 测试空路径
+	// Test empty path
 	amountOut, err = calculator.CalculatePathOutput([]*types.Pool{}, big.NewInt(1000), "0xTokenA", "0xTokenB")
 	assert.NoError(t, err)
 	assert.Equal(t, int64(0), amountOut.Int64())
@@ -128,7 +128,7 @@ func TestRouter_GetBestQuote(t *testing.T) {
 	mockStore := new(MockStore)
 	router := NewRouter(mockStore, perfConfig)
 
-	// 模拟缓存返回的池子
+	// Mock pools returned by cache
 	mockPools := []*types.Pool{
 		{
 			Address:  "pool1",
@@ -136,7 +136,7 @@ func TestRouter_GetBestQuote(t *testing.T) {
 			Token0:   types.Token{Address: "0xweth"},
 			Token1:   types.Token{Address: "0xusdt"},
 			Reserve0: big.NewInt(1000000000000000000), // 1 ETH
-			Reserve1: big.NewInt(2000000000000),       // 更大的 USDT 储备
+			Reserve1: big.NewInt(2000000000000),       // Larger USDT reserves
 		},
 	}
 	mockStore.On("GetAllPools", mock.Anything).Return(mockPools, nil)
@@ -144,14 +144,14 @@ func TestRouter_GetBestQuote(t *testing.T) {
 	req := &types.QuoteRequest{
 		TokenIn:  "0xweth",
 		TokenOut: "0xusdt",
-		AmountIn: big.NewInt(1000000000000000), // 更小的输入金额 0.001 ETH
+		AmountIn: big.NewInt(1000000000000000), // Smaller input amount 0.001 ETH
 		MaxHops:  3,
 	}
 
-	// 由于路径查找的复杂性，这里主要测试函数调用不报错
+	// Due to complexity of path finding, mainly test function call doesn't error
 	response, err := router.GetBestQuote(context.Background(), req)
 
-	// 即使没有找到路径，也不应该报错（除了特定错误）
+	// Even if no path is found, shouldn't error (except for specific errors)
 	if err != nil {
 		assert.Contains(t, err.Error(), "no valid path")
 	} else {
@@ -165,7 +165,7 @@ func TestPathFinder_FindDirectPaths(t *testing.T) {
 	mockStore := new(MockStore)
 	pathFinder := NewPathFinder(mockStore)
 
-	// 构建测试数据 - 确保有足够的流动性
+	// Build test data - ensure sufficient liquidity
 	mockPools := []*types.Pool{
 		{
 			Address:  "pool1",

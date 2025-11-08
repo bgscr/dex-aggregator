@@ -24,7 +24,7 @@ type Router struct {
 
 func NewRouter(cache cache.Store, perfConfig config.PerformanceConfig) *Router {
 	calculator := NewPriceCalculator()
-	// 使用配置中的值覆盖默认值
+	// Use configured values to override defaults
 	calculator.SetMaxSlippage(perfConfig.MaxSlippage)
 
 	return &Router{
@@ -44,14 +44,14 @@ func (r *Router) GetBestQuote(ctx context.Context, req *types.QuoteRequest) (*ty
 	tokenOut := strings.ToLower(req.TokenOut)
 
 	log.Printf("Normalized tokens: %s -> %s", tokenIn, tokenOut)
-	// 获取所有池子进行检查
+	// Get all pools for inspection
 	allPools, err := r.cache.GetAllPools(ctx)
 	if err != nil {
 		log.Printf("Failed to get all pools: %v", err)
 	} else {
 		log.Printf("Total pools in cache: %d", len(allPools))
 
-		// 检查是否有相关的池子
+		// Check if there are relevant pools
 		relatedPools := 0
 		for _, pool := range allPools {
 			poolToken0 := strings.ToLower(pool.Token0.Address)
@@ -158,13 +158,6 @@ func (r *Router) calculatePathsConcurrently(ctx context.Context, paths [][]*type
 
 			gasCost := r.estimateGasCost(p)
 
-			// TODO: 修复 Gas 成本计算逻辑
-			// netAmount := new(big.Int).Sub(amountOut, gasCost)
-			// if netAmount.Cmp(big.NewInt(0)) <= 0 {
-			// 	log.Printf("Path %d not profitable after gas costs", pathIndex+1)
-			// 	return
-			// }
-
 			tradePath := &types.TradePath{
 				Pools:     p,
 				AmountOut: amountOut,
@@ -205,12 +198,12 @@ func (r *Router) findOptimalPath(tradePaths []*types.TradePath) *types.TradePath
 		return nil
 	}
 
-	// 按原始输出金额排序 (最高优先)
+	// Sort by raw output amount (highest first)
 	sort.Slice(tradePaths, func(i, j int) bool {
 		return tradePaths[i].AmountOut.Cmp(tradePaths[j].AmountOut) > 0
 	})
 
-	// 返回输出最高的路径
+	// Return path with highest output
 	bestPath := tradePaths[0]
 	return bestPath
 }

@@ -13,21 +13,21 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// TestIntegration_CompleteFlow 测试完整的报价流程
+// TestIntegration_CompleteFlow tests complete quote flow
 func TestIntegration_CompleteFlow(t *testing.T) {
-	// 初始化配置
+	// Initialize configuration
 	err := config.Init()
 	assert.NoError(t, err)
 
-	// 创建内存缓存用于测试
+	// Create in-memory cache for testing
 	store := cache.NewMemoryStore()
 
-	// 创建路由
+	// Create router
 	perfConfig := config.PerformanceConfig{MaxSlippage: 5.0, MaxHops: 3, MaxConcurrentPaths: 10, CacheTTL: 60 * time.Second}
 	router := aggregator.NewRouter(store, perfConfig)
 	assert.NotNil(t, router)
 
-	// 创建测试池子 - 使用 big.Int 的 SetString 来处理大数
+	// Create test pool - using big.Int SetString for large numbers
 	reserve0, _ := new(big.Int).SetString("10000000000000000000", 10) // 10 ETH
 	reserve1 := big.NewInt(20000000000)                               // 20000 USDT
 
@@ -49,24 +49,24 @@ func TestIntegration_CompleteFlow(t *testing.T) {
 		Fee:      300,
 	}
 
-	// 存储池子
+	// Store pool
 	err = store.StorePool(context.Background(), pool)
 	assert.NoError(t, err)
 
-	// 创建报价请求 - 使用较小的金额
+	// Create quote request - using smaller amount
 	req := &types.QuoteRequest{
 		TokenIn:  "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
 		TokenOut: "0xdac17f958d2ee523a2206206994597c13d831ec7",
-		AmountIn: big.NewInt(1000000000000000), // 0.001 ETH - 更小的金额
+		AmountIn: big.NewInt(1000000000000000), // 0.001 ETH - smaller amount
 		MaxHops:  3,
 	}
 
-	// 获取报价
+	// Get quote
 	response, err := router.GetBestQuote(context.Background(), req)
 
-	// 由于测试环境的限制，这里主要验证流程不报错
+	// Due to test environment limitations, mainly verify the flow doesn't error
 	if err != nil {
-		// 在没有找到路径的情况下是正常的
+		// It's normal when no path is found
 		assert.Contains(t, err.Error(), "no valid path")
 	} else {
 		assert.NotNil(t, response)
@@ -76,11 +76,11 @@ func TestIntegration_CompleteFlow(t *testing.T) {
 	}
 }
 
-// TestIntegration_CachePerformance 测试缓存性能
+// TestIntegration_CachePerformance tests cache performance
 func TestIntegration_CachePerformance(t *testing.T) {
-	store := cache.NewMemoryStore() // 使用内存缓存而不是 Redis
+	store := cache.NewMemoryStore() // Use in-memory cache instead of Redis
 
-	// 多次访问测试缓存命中率
+	// Multiple accesses to test cache hit rate
 	pool := &types.Pool{
 		Address:  "performance-test-pool",
 		Exchange: "Uniswap V2",
@@ -91,12 +91,12 @@ func TestIntegration_CachePerformance(t *testing.T) {
 	err := store.StorePool(context.Background(), pool)
 	assert.NoError(t, err)
 
-	// 第一次访问
+	// First access
 	retrievedPool, err := store.GetPool(context.Background(), "performance-test-pool")
 	assert.NoError(t, err)
 	assert.Equal(t, pool.Address, retrievedPool.Address)
 
-	// 第二次访问 - 应该从缓存命中
+	// Second access - should hit cache
 	retrievedPool2, err := store.GetPool(context.Background(), "performance-test-pool")
 	assert.NoError(t, err)
 	assert.Equal(t, pool.Address, retrievedPool2.Address)

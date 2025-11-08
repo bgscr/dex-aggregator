@@ -19,11 +19,11 @@ type MainTestSuite struct {
 }
 
 func (suite *MainTestSuite) SetupTest() {
-	// 初始化配置
+	// Initialize configuration
 	err := config.Init()
 	suite.NoError(err)
 
-	// 创建缓存
+	// Create cache
 	suite.cache = cache.NewTwoLevelCache(
 		config.AppConfig.Redis.Addr,
 		config.AppConfig.Redis.Password,

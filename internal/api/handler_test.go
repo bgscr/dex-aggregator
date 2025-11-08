@@ -19,7 +19,7 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-// MockStore 模拟存储接口
+// MockStore simulates storage interface
 type MockStore struct {
 	mock.Mock
 }
@@ -66,7 +66,7 @@ func (m *MockStore) GetToken(ctx context.Context, address string) (*types.Token,
 	return args.Get(0).(*types.Token), args.Error(1)
 }
 
-// MockTwoLevelCache 模拟两级缓存 - 实现 cache.Store 接口
+// MockTwoLevelCache simulates two-level cache - implements cache.Store interface
 type MockTwoLevelCache struct {
 	mock.Mock
 }
@@ -121,9 +121,9 @@ func (m *MockTwoLevelCache) GetStats() *cache.CacheStats {
 	return args.Get(0).(*cache.CacheStats)
 }
 
-// 在所有测试之前初始化配置
+// Initialize configuration before all tests
 func TestMain(m *testing.M) {
-	// 初始化配置
+	// Initialize configuration
 	config.Init()
 	m.Run()
 }
@@ -132,11 +132,11 @@ func TestGetQuote_Success(t *testing.T) {
 	mockStore := new(MockStore)
 	perfConfig := config.PerformanceConfig{MaxSlippage: 5.0, MaxHops: 3, MaxConcurrentPaths: 10}
 
-	// 创建真实的 Router，但使用模拟的 Store
+	// Create real Router but use mock Store
 	router := aggregator.NewRouter(mockStore, perfConfig)
 	handler := NewHandler(router, mockStore)
 
-	// 准备精确的测试数据 - 确保不会触发滑点
+	// Prepare precise test data - ensure no slippage is triggered
 	amountIn := big.NewInt(1000000000000000) // 0.001 ETH
 
 	reqBody := map[string]interface{}{
@@ -146,7 +146,7 @@ func TestGetQuote_Success(t *testing.T) {
 	}
 	body, _ := json.Marshal(reqBody)
 
-	// 模拟存储返回的池子数据
+	// Mock pool data returned by store
 	reserve0, _ := new(big.Int).SetString("100000000000000000000", 10) // 100 ETH
 	reserve1 := big.NewInt(200000000000)                               // 200,000 USDT
 
@@ -171,37 +171,37 @@ func TestGetQuote_Success(t *testing.T) {
 	}
 	mockStore.On("GetAllPools", mock.Anything).Return(mockPools, nil)
 
-	// 创建请求
+	// Create request
 	req := httptest.NewRequest("POST", "/api/v1/quote", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 
-	// 执行处理
+	// Execute handler
 	handler.GetQuote(w, req)
 
-	// 精确验证
+	// Verify response
 	assert.Equal(t, http.StatusOK, w.Code, "Expected status 200, got %d: %s", w.Code, w.Body.String())
 
-	// 首先验证响应是有效的 JSON
+	// First verify response is valid JSON
 	var response map[string]interface{}
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	assert.NoError(t, err, "Response should be valid JSON")
 
-	// 然后验证具体的字段
+	// Then verify specific fields
 	assert.Contains(t, response, "amountOut")
 	assert.Contains(t, response, "paths")
 	assert.Contains(t, response, "bestPath")
 	assert.Contains(t, response, "gasEstimate")
 
-	// 验证输出金额是字符串格式（因为我们的自定义序列化）
+	// Verify amountOut is in string format (due to custom serialization)
 	amountOutStr, ok := response["amountOut"].(string)
 	assert.True(t, ok, "amountOut should be a string")
 
-	// 转换为 big.Int 进行数值验证
+	// Convert to big.Int for numerical verification
 	amountOut, ok := new(big.Int).SetString(amountOutStr, 10)
 	assert.True(t, ok, "amountOut should be a valid number")
 
-	// 验证输出金额在合理范围内
+	// Verify output amount is in reasonable range
 	assert.True(t, amountOut.Cmp(big.NewInt(1000)) > 0, "AmountOut should be positive: %s", amountOut.String())
 }
 
@@ -212,7 +212,7 @@ func TestGetQuote_WithSlippage(t *testing.T) {
 	router := aggregator.NewRouter(mockStore, perfConfig)
 	handler := NewHandler(router, mockStore)
 
-	// 使用会导致高滑点的金额
+	// Use amount that would cause high slippage
 	amountIn, _ := new(big.Int).SetString("50000000000000000000", 10) // 50 ETH
 
 	reqBody := map[string]interface{}{
@@ -222,7 +222,7 @@ func TestGetQuote_WithSlippage(t *testing.T) {
 	}
 	body, _ := json.Marshal(reqBody)
 
-	// 池子储备相对较小
+	// Pool reserves are relatively small
 	reserve0, _ := new(big.Int).SetString("100000000000000000000", 10) // 100 ETH
 	reserve1 := big.NewInt(200000000000)                               // 200,000 USDT
 
@@ -253,14 +253,14 @@ func TestGetQuote_WithSlippage(t *testing.T) {
 
 	handler.GetQuote(w, req)
 
-	// 应该因为滑点过高而失败
+	// Should fail due to high slippage
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
 
-	// 验证错误消息包含滑点信息 - 检查错误响应体
+	// Verify error message contains slippage info - check error response body
 	var errorResponse map[string]interface{}
 	err := json.Unmarshal(w.Body.Bytes(), &errorResponse)
 	if err == nil {
-		// 如果能够解析为 JSON，检查错误消息
+		// If able to parse as JSON, check error message
 		if errorMsg, exists := errorResponse["error"]; exists {
 			assert.True(t, strings.Contains(strings.ToLower(errorMsg.(string)), "slippage") ||
 				strings.Contains(strings.ToLower(errorMsg.(string)), "no valid path"),
@@ -275,7 +275,7 @@ func TestGetQuote_InvalidJSON(t *testing.T) {
 	router := aggregator.NewRouter(mockStore, perfConfig)
 	handler := NewHandler(router, mockStore)
 
-	// 无效的 JSON
+	// Invalid JSON
 	req := httptest.NewRequest("POST", "/api/v1/quote", bytes.NewReader([]byte("invalid json")))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
@@ -348,7 +348,7 @@ func TestGetPools(t *testing.T) {
 	router := aggregator.NewRouter(mockStore, perfConfig)
 	handler := NewHandler(router, mockStore)
 
-	// 模拟缓存返回
+	// Mock cache return
 	expectedPools := []*types.Pool{
 		{
 			Address:  "pool1",
@@ -382,7 +382,7 @@ func TestGetPools(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, float64(1), response["count"].(float64))
 
-	// 验证池子数据正确返回
+	// Verify pool data is correctly returned
 	poolsData := response["pools"].([]interface{})
 	assert.Equal(t, 1, len(poolsData))
 
@@ -458,7 +458,7 @@ func TestGetConfig(t *testing.T) {
 	router := aggregator.NewRouter(mockStore, perfConfig)
 	handler := NewHandler(router, mockStore)
 
-	// 确保配置已初始化
+	// Ensure configuration is initialized
 	if config.AppConfig == nil {
 		config.Init()
 	}
@@ -474,7 +474,7 @@ func TestGetConfig(t *testing.T) {
 	err := json.Unmarshal(w.Body.Bytes(), &response)
 	assert.NoError(t, err)
 
-	// 验证配置结构
+	// Verify configuration structure
 	assert.Contains(t, response, "server")
 	assert.Contains(t, response, "redis")
 	assert.Contains(t, response, "ethereum")
@@ -527,18 +527,18 @@ func TestGetPoolByAddress(t *testing.T) {
 }
 
 func TestGetCacheStats_WithTwoLevelCache(t *testing.T) {
-	// 创建真实的 Router
+	// Create real Router
 	mockStore := new(MockStore)
 	perfConfig := config.PerformanceConfig{MaxSlippage: 5.0, MaxHops: 3, MaxConcurrentPaths: 10}
 	router := aggregator.NewRouter(mockStore, perfConfig)
 
-	// 创建模拟的 TwoLevelCache
+	// Create mock TwoLevelCache
 	mockTwoLevelCache := new(MockTwoLevelCache)
 
-	// 创建 Handler，使用模拟的 TwoLevelCache
+	// Create Handler using mock TwoLevelCache
 	handler := NewHandler(router, mockTwoLevelCache)
 
-	// 模拟缓存统计
+	// Mock cache statistics
 	expectedStats := &cache.CacheStats{
 		LocalHits:   100,
 		LocalMisses: 20,
@@ -552,18 +552,18 @@ func TestGetCacheStats_WithTwoLevelCache(t *testing.T) {
 
 	handler.GetCacheStats(w, req)
 
-	// 检查状态码
+	// Check status code
 	if w.Code != http.StatusOK {
 		t.Logf("Expected status 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	// 如果状态码是 200，验证响应
+	// If status code is 200, verify response
 	if w.Code == http.StatusOK {
 		var response map[string]interface{}
 		err := json.Unmarshal(w.Body.Bytes(), &response)
 		assert.NoError(t, err)
 
-		// 安全地获取字段值
+		// Safely get field values
 		if localHits, exists := response["local_hits"]; exists {
 			assert.Equal(t, float64(100), localHits.(float64))
 		}
@@ -584,7 +584,7 @@ func TestGetCacheStats_WithoutTwoLevelCache(t *testing.T) {
 	mockStore := new(MockStore)
 	router := aggregator.NewRouter(mockStore, perfConfig)
 
-	// 使用普通的 MockStore，不是 TwoLevelCache
+	// Use regular MockStore, not TwoLevelCache
 	handler := NewHandler(router, mockStore)
 
 	req := httptest.NewRequest("GET", "/cache/stats", nil)
@@ -592,6 +592,6 @@ func TestGetCacheStats_WithoutTwoLevelCache(t *testing.T) {
 
 	handler.GetCacheStats(w, req)
 
-	// 应该返回未实现的错误
+	// Should return not implemented error
 	assert.Equal(t, http.StatusNotImplemented, w.Code)
 }

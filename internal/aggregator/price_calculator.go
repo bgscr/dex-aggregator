@@ -168,48 +168,48 @@ func (pc *PriceCalculator) checkSlippageWithLimit(reserveIn, reserveOut, amountI
 		return nil
 	}
 
-	// 1. 转换为浮点数以便高精度计算
+	// 1. Convert to float for high precision calculation
 	fReserveIn := new(big.Float).SetInt(reserveIn)
 	fReserveOut := new(big.Float).SetInt(reserveOut)
 	fAmountIn := new(big.Float).SetInt(amountIn)
 
-	// 2. 检查除零
+	// 2. Check division by zero
 	if fReserveIn.Cmp(big.NewFloat(0)) == 0 {
 		log.Printf("Slippage check: zero reserveIn")
 		return fmt.Errorf("zero reserveIn")
 	}
 
-	// 3. 计算交易前价格 (Spot Price)
+	// 3. Calculate spot price (before trade)
 	// spotPrice = reserveOut / reserveIn
 	spotPrice := new(big.Float).Quo(fReserveOut, fReserveIn)
 	if spotPrice.Cmp(big.NewFloat(0)) == 0 {
 		return fmt.Errorf("zero spot price")
 	}
 
-	// 4. 计算实际收到的 amountOut (包含手续费)
+	// 4. Calculate actual received amountOut (including fee)
 	amountOut := calculateOutputWithFee(reserveIn, reserveOut, amountIn)
 	fAmountOut := new(big.Float).SetInt(amountOut)
 
-	// 5. 计算有效价格 (Effective Price)
+	// 5. Calculate effective price
 	// effectivePrice = amountOut / amountIn
 	if fAmountIn.Cmp(big.NewFloat(0)) == 0 {
 		return fmt.Errorf("zero amountIn")
 	}
 	effectivePrice := new(big.Float).Quo(fAmountOut, fAmountIn)
 
-	// 6. 计算价格冲击 (Price Impact)
+	// 6. Calculate price impact
 	// impact = (spotPrice - effectivePrice) / spotPrice
 	priceImpact := new(big.Float).Sub(spotPrice, effectivePrice)
 	priceImpactRatio := new(big.Float).Quo(priceImpact, spotPrice)
 
-	// 7. 转换为百分比
+	// 7. Convert to percentage
 	slippagePercent, _ := priceImpactRatio.Float64()
 	slippagePercent = slippagePercent * 100
 
 	log.Printf("Slippage check: Spot=%.6f, Eff=%.6f, Impact=%.2f%% (Max: %.2f%%)",
 		spotPrice, effectivePrice, slippagePercent, maxSlippage)
 
-	// 8. 检查是否超过最大允许滑点
+	// 8. Check if exceeds maximum allowed slippage
 	if slippagePercent > maxSlippage {
 		return fmt.Errorf("slippage too high: %.2f%% (max: %.2f%%)", slippagePercent, maxSlippage)
 	}

@@ -52,7 +52,7 @@ func bigIntFromString(s string) *big.Int {
 func (mpc *MockPoolCollector) InitMockPools() error {
 	ctx := context.Background()
 
-	// 扩展代币列表
+	// Extended token list
 	tokens := map[string]types.Token{
 		"WETH": {
 			Address:  "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
@@ -96,7 +96,7 @@ func (mpc *MockPoolCollector) InitMockPools() error {
 		},
 	}
 
-	// 扩展交易对
+	// Extended trading pairs
 	pairs := []struct {
 		name     string
 		token0   types.Token
@@ -104,7 +104,7 @@ func (mpc *MockPoolCollector) InitMockPools() error {
 		reserve0 *big.Int
 		reserve1 *big.Int
 	}{
-		// 主要稳定币对
+		// Main stablecoin pairs
 		{
 			name:     "WETH/USDT",
 			token0:   tokens["WETH"],
@@ -126,7 +126,7 @@ func (mpc *MockPoolCollector) InitMockPools() error {
 			reserve0: bigIntFromString("3000000000000000000"),    // 3 WETH
 			reserve1: bigIntFromString("6000000000000000000000"), // 6000 DAI
 		},
-		// 稳定币间交易对
+		// Stablecoin trading pairs
 		{
 			name:     "USDC/USDT",
 			token0:   tokens["USDC"],
@@ -141,7 +141,7 @@ func (mpc *MockPoolCollector) InitMockPools() error {
 			reserve0: big.NewInt(3000000000),                     // 3,000 USDC
 			reserve1: bigIntFromString("3000000000000000000000"), // 3000 DAI
 		},
-		// WBTC 交易对
+		// WBTC trading pairs
 		{
 			name:     "WETH/WBTC",
 			token0:   tokens["WETH"],
@@ -156,7 +156,7 @@ func (mpc *MockPoolCollector) InitMockPools() error {
 			reserve0: big.NewInt(100000000),   // 1 WBTC
 			reserve1: big.NewInt(30000000000), // 30,000 USDT
 		},
-		// 其他代币对
+		// Other token pairs
 		{
 			name:     "WETH/LINK",
 			token0:   tokens["WETH"],
@@ -178,7 +178,7 @@ func (mpc *MockPoolCollector) InitMockPools() error {
 			reserve0: bigIntFromString("800000000000000000"),   // 0.8 WETH
 			reserve1: bigIntFromString("40000000000000000000"), // 40 AAVE
 		},
-		// 三跳路径需要的交易对
+		// Pairs needed for three-hop paths
 		{
 			name:     "LINK/USDT",
 			token0:   tokens["LINK"],
@@ -193,7 +193,7 @@ func (mpc *MockPoolCollector) InitMockPools() error {
 			reserve0: bigIntFromString("1000000000000000000000"), // 1000 UNI
 			reserve1: big.NewInt(2000000000),                     // 2,000 USDC
 		},
-		// 在 pairs 数组中增加更高流动性的池子
+		// Add higher liquidity pools to pairs array
 		{
 			name:     "WETH/USDT-HighLiquidity",
 			token0:   tokens["WETH"],
@@ -203,7 +203,7 @@ func (mpc *MockPoolCollector) InitMockPools() error {
 		},
 	}
 
-	// 为每个交易所创建池子
+	// Create pools for each exchange
 	uniquePools := make(map[string]bool)
 	poolCount := 0
 	for _, exchange := range mpc.exchanges {

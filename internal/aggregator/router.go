@@ -6,6 +6,7 @@ import (
 	"log"
 	"math/big"
 	"sort"
+	"strings"
 
 	"dex-aggregator/internal/cache"
 	"dex-aggregator/internal/types"
@@ -30,7 +31,12 @@ func NewRouter(cache cache.Store, baseTokens []string) *Router {
 func (r *Router) GetBestQuote(ctx context.Context, req *types.QuoteRequest) (*types.QuoteResponse, error) {
 	log.Printf("Starting quote: %s -> %s, amount: %s", req.TokenIn, req.TokenOut, req.AmountIn.String())
 
-	paths, err := r.pathFinder.FindAllPaths(ctx, req.TokenIn, req.TokenOut, req.MaxHops)
+	// 2. 在这里将请求中的地址转换为小写
+	tokenIn := strings.ToLower(req.TokenIn)
+	tokenOut := strings.ToLower(req.TokenOut)
+
+	// 3. 使用转换后的小写地址进行路径查找
+	paths, err := r.pathFinder.FindAllPaths(ctx, tokenIn, tokenOut, req.MaxHops)
 	if err != nil {
 		return nil, err
 	}
@@ -41,8 +47,8 @@ func (r *Router) GetBestQuote(ctx context.Context, req *types.QuoteRequest) (*ty
 	for i, path := range paths {
 		log.Printf("Calculating path %d (contains %d pools)", i+1, len(path))
 
-		// 传递 tokenIn 和 tokenOut 参数
-		amountOut, err := r.calculator.CalculatePathOutput(path, req.AmountIn, req.TokenIn, req.TokenOut)
+		// 4. 使用转换后的小写地址进行价格计算
+		amountOut, err := r.calculator.CalculatePathOutput(path, req.AmountIn, tokenIn, tokenOut)
 		if err != nil {
 			log.Printf("Failed to calculate path %d: %v", i+1, err)
 			continue

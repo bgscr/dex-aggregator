@@ -39,7 +39,7 @@ func main() {
 	}
 
 	// 使用配置中的基础代币初始化路由引擎
-	router := aggregator.NewRouter(store, config.AppConfig.DEX.BaseTokens)
+	router := aggregator.NewRouter(store)
 
 	// 初始化API handler
 	handler := api.NewHandler(router, store)

@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"sort"
 	"strings"
+	"sync"
 
 	"dex-aggregator/internal/cache"
 	"dex-aggregator/internal/types"
@@ -16,26 +17,22 @@ type Router struct {
 	cache      cache.Store
 	pathFinder *PathFinder
 	calculator *PriceCalculator
-	baseTokens []string
 }
 
-func NewRouter(cache cache.Store, baseTokens []string) *Router {
+func NewRouter(cache cache.Store) *Router {
 	return &Router{
 		cache:      cache,
-		pathFinder: NewPathFinder(cache, baseTokens),
+		pathFinder: NewPathFinder(cache),
 		calculator: NewPriceCalculator(),
-		baseTokens: baseTokens,
 	}
 }
 
 func (r *Router) GetBestQuote(ctx context.Context, req *types.QuoteRequest) (*types.QuoteResponse, error) {
 	log.Printf("Starting quote: %s -> %s, amount: %s", req.TokenIn, req.TokenOut, req.AmountIn.String())
 
-	// 2. 在这里将请求中的地址转换为小写
 	tokenIn := strings.ToLower(req.TokenIn)
 	tokenOut := strings.ToLower(req.TokenOut)
 
-	// 3. 使用转换后的小写地址进行路径查找
 	paths, err := r.pathFinder.FindAllPaths(ctx, tokenIn, tokenOut, req.MaxHops)
 	if err != nil {
 		return nil, err
@@ -43,34 +40,59 @@ func (r *Router) GetBestQuote(ctx context.Context, req *types.QuoteRequest) (*ty
 
 	log.Printf("Found %d possible paths initially", len(paths))
 
-	var tradePaths []*types.TradePath
+	// --- 并发计算路径 ---
+	var wg sync.WaitGroup
+	// 使用带缓冲的 channel 来收集结果
+	resultsChan := make(chan *types.TradePath, len(paths))
+
 	for i, path := range paths {
-		log.Printf("Calculating path %d (contains %d pools)", i+1, len(path))
+		wg.Add(1) // 增加 WaitGroup 计数器
 
-		// 4. 使用转换后的小写地址进行价格计算
-		amountOut, err := r.calculator.CalculatePathOutput(path, req.AmountIn, tokenIn, tokenOut)
-		if err != nil {
-			log.Printf("Failed to calculate path %d: %v", i+1, err)
-			continue
-		}
+		// 启动 goroutine 进行计算
+		// 必须将 path 和 i 作为参数传递，以避免循环变量捕获问题
+		go func(p []*types.Pool, pathIndex int) {
+			defer wg.Done() // 完成时减少计数器
 
-		if amountOut.Cmp(big.NewInt(0)) <= 0 {
-			log.Printf("Path %d resulted in zero or negative output: %s", i+1, amountOut.String())
-			continue
-		}
+			// log.Printf("Calculating path %d (contains %d pools)", pathIndex+1, len(p))
 
-		gasCost := r.estimateGasCost(path)
+			amountOut, err := r.calculator.CalculatePathOutput(p, req.AmountIn, tokenIn, tokenOut)
+			if err != nil {
+				log.Printf("Failed to calculate path %d: %v", pathIndex+1, err)
+				return // 终止此 goroutine
+			}
 
-		tradePath := &types.TradePath{
-			Pools:     path,
-			AmountOut: amountOut,
-			Dexes:     r.getDexesFromPath(path),
-			GasCost:   gasCost,
-		}
+			if amountOut.Cmp(big.NewInt(0)) <= 0 {
+				// log.Printf("Path %d resulted in zero or negative output: %s", pathIndex+1, amountOut.String())
+				return // 终止此 goroutine
+			}
 
-		tradePaths = append(tradePaths, tradePath)
-		log.Printf("Path %d output amount: %s", i+1, amountOut.String())
+			gasCost := r.estimateGasCost(p)
+
+			tradePath := &types.TradePath{
+				Pools:     p,
+				AmountOut: amountOut,
+				Dexes:     r.getDexesFromPath(p),
+				GasCost:   gasCost,
+			}
+
+			resultsChan <- tradePath // 将有效结果发送到 channel
+			// log.Printf("Path %d output amount: %s", pathIndex+1, amountOut.String())
+
+		}(path, i)
 	}
+
+	// 启动一个单独的 goroutine，在所有计算完成后关闭 channel
+	go func() {
+		wg.Wait()
+		close(resultsChan)
+	}()
+
+	// --- 收集所有结果 ---
+	var tradePaths []*types.TradePath
+	for tradePath := range resultsChan {
+		tradePaths = append(tradePaths, tradePath)
+	}
+	// --- 并发计算结束 ---
 
 	log.Printf("After calculation, found %d valid trade paths", len(tradePaths))
 
@@ -78,14 +100,14 @@ func (r *Router) GetBestQuote(ctx context.Context, req *types.QuoteRequest) (*ty
 		return nil, fmt.Errorf("no valid path found")
 	}
 
-	// Sort by output amount
+	// Sort by output amount (排序逻辑不变)
 	sort.Slice(tradePaths, func(i, j int) bool {
 		return tradePaths[i].AmountOut.Cmp(tradePaths[j].AmountOut) > 0
 	})
 
 	bestPath := tradePaths[0]
 
-	// Consider net profit after gas cost
+	// 考虑 Gas 成本 (逻辑不变)
 	for i, path := range tradePaths {
 		netAmount := new(big.Int).Sub(path.AmountOut, path.GasCost)
 		currentBestNet := new(big.Int).Sub(bestPath.AmountOut, bestPath.GasCost)

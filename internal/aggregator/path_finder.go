@@ -15,15 +15,13 @@ type PathFinder struct {
 	maxHops int
 }
 
-// NewPathFinder 不再需要 baseTokens
 func NewPathFinder(cache cache.Store) *PathFinder {
 	return &PathFinder{
 		cache:   cache,
-		maxHops: 3, // 默认最大跳数
+		maxHops: 3,
 	}
 }
 
-// FindAllPaths 查找所有路径（BFS + 回溯）
 func (pf *PathFinder) FindAllPaths(ctx context.Context, tokenIn, tokenOut string, maxHops int) ([][]*types.Pool, error) {
 	if maxHops <= 0 {
 		maxHops = pf.maxHops
@@ -32,24 +30,34 @@ func (pf *PathFinder) FindAllPaths(ctx context.Context, tokenIn, tokenOut string
 	normalizedTokenIn := strings.ToLower(tokenIn)
 	normalizedTokenOut := strings.ToLower(tokenOut)
 
-	log.Printf("PathFinder: Looking for paths from %s to %s (maxHops: %d)",
+	log.Printf("PathFinder: Searching paths from %s to %s (maxHops: %d)",
 		normalizedTokenIn, normalizedTokenOut, maxHops)
 
-	// 1. 获取所有池子以构建图
 	allPools, err := pf.cache.GetAllPools(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get all pools: %v", err)
+		return nil, fmt.Errorf("failed to get pools: %v", err)
 	}
 
-	// 2. 构建邻接表 (token -> neighbors) 和 池子映射 (tokenA -> tokenB -> pools)
+	log.Printf("PathFinder: Loaded %d pools from cache", len(allPools))
+
+	// Debug: print all token addresses in pools
+	for i, pool := range allPools {
+		if i < 5 { // Print first 5 pools for debugging
+			log.Printf("Pool %d: %s <-> %s (%s/%s)", i,
+				pool.Token0.Address, pool.Token1.Address,
+				pool.Token0.Symbol, pool.Token1.Symbol)
+		}
+	}
+
+	// Build adjacency list and pool map
 	adj := make(map[string]map[string]bool)
 	poolMap := make(map[string]map[string][]*types.Pool)
 
 	for _, pool := range allPools {
-		t0 := pool.Token0.Address
-		t1 := pool.Token1.Address
+		t0 := strings.ToLower(pool.Token0.Address)
+		t1 := strings.ToLower(pool.Token1.Address)
 
-		// --- 初始化 Map ---
+		// Initialize maps if needed
 		if adj[t0] == nil {
 			adj[t0] = make(map[string]bool)
 		}
@@ -62,111 +70,118 @@ func (pf *PathFinder) FindAllPaths(ctx context.Context, tokenIn, tokenOut string
 		if poolMap[t1] == nil {
 			poolMap[t1] = make(map[string][]*types.Pool)
 		}
-		// --- 添加边 ---
+
+		// Add edges in both directions
 		adj[t0][t1] = true
 		adj[t1][t0] = true
+
+		// Add pools to poolMap
 		poolMap[t0][t1] = append(poolMap[t0][t1], pool)
 		poolMap[t1][t0] = append(poolMap[t1][t0], pool)
 	}
 
-	// 3. 执行 BFS 查找所有代币路径
+	// Debug: check if start and end tokens exist in graph
+	if adj[normalizedTokenIn] == nil {
+		log.Printf("PathFinder: TokenIn %s not found in graph", normalizedTokenIn)
+		return [][]*types.Pool{}, nil
+	}
+	if adj[normalizedTokenOut] == nil {
+		log.Printf("PathFinder: TokenOut %s not found in graph", normalizedTokenOut)
+		return [][]*types.Pool{}, nil
+	}
+
+	log.Printf("PathFinder: TokenIn %s has %d neighbors", normalizedTokenIn, len(adj[normalizedTokenIn]))
+	log.Printf("PathFinder: TokenOut %s has %d neighbors", normalizedTokenOut, len(adj[normalizedTokenOut]))
+
+	// BFS to find all token paths
 	var allTokenPaths [][]string
-	// 队列存储的是 "代币路径" (e.g., [tokenA, tokenB, tokenC])
 	queue := [][]string{{normalizedTokenIn}}
+	visited := make(map[string]bool)
+	visited[normalizedTokenIn] = true
 
 	for len(queue) > 0 {
-		currentPathTokens := queue[0]
+		currentPath := queue[0]
 		queue = queue[1:]
 
-		lastToken := currentPathTokens[len(currentPathTokens)-1]
+		lastToken := currentPath[len(currentPath)-1]
 
-		// 找到目标
+		// Found target
 		if lastToken == normalizedTokenOut {
-			allTokenPaths = append(allTokenPaths, currentPathTokens)
-			// 注意：我们不在这里停止，因为我们想找到所有路径，而不仅仅是最短的
+			allTokenPaths = append(allTokenPaths, currentPath)
+			continue // Continue to find all paths, not just the first one
 		}
 
-		// 达到最大跳数，停止探索
-		// 路径长度（代币数）= 跳数 + 1
-		if len(currentPathTokens) >= maxHops+1 {
+		// Check max hops (path length = hops + 1)
+		if len(currentPath) >= maxHops+1 {
 			continue
 		}
 
-		// 探索邻居
-		neighbors := adj[lastToken]
-		for neighbor := range neighbors {
-			// 检查是否在当前路径中访问过（防止环路）
-			isVisited := false
-			for _, tokenInPath := range currentPathTokens {
-				if tokenInPath == neighbor {
-					isVisited = true
-					break
-				}
+		// Explore neighbors
+		for neighbor := range adj[lastToken] {
+			// Check if neighbor is already in current path to avoid cycles
+			if containsToken(currentPath, neighbor) {
+				continue
 			}
 
-			if !isVisited {
-				// 创建新路径并加入队列
-				newPathTokens := make([]string, len(currentPathTokens))
-				copy(newPathTokens, currentPathTokens)
-				newPathTokens = append(newPathTokens, neighbor)
-				queue = append(queue, newPathTokens)
-			}
+			// Create new path
+			newPath := make([]string, len(currentPath))
+			copy(newPath, currentPath)
+			newPath = append(newPath, neighbor)
+			queue = append(queue, newPath)
 		}
-	} // end of: for len(queue) > 0
+	}
 
 	log.Printf("PathFinder: Found %d token paths", len(allTokenPaths))
 
-	// 4. 将 "代币路径" 转换为 "池子路径" (使用回溯法)
+	// Convert token paths to pool paths
 	var allPoolPaths [][]*types.Pool
 	for _, tokenPath := range allTokenPaths {
-		// buildPoolPaths 会找到该代币路径的所有池子组合
 		poolPaths := pf.buildPoolPaths(tokenPath, poolMap)
 		allPoolPaths = append(allPoolPaths, poolPaths...)
 	}
 
-	log.Printf("PathFinder: Found %d total pool paths (after combinations)", len(allPoolPaths))
+	log.Printf("PathFinder: Found %d total pool paths", len(allPoolPaths))
 	return allPoolPaths, nil
-} // 这里添加了缺失的 }
+}
 
-// buildPoolPaths 使用回溯法将代币路径转换为所有可能的池子路径组合
-// 例如：[A, B, C] -> [Pool_AB_1, Pool_BC_1], [Pool_AB_1, Pool_BC_2], [Pool_AB_2, Pool_BC_1], ...
 func (pf *PathFinder) buildPoolPaths(tokens []string, poolMap map[string]map[string][]*types.Pool) [][]*types.Pool {
 	var paths [][]*types.Pool
-	var currentPoolPath []*types.Pool
+	var currentPath []*types.Pool
 
-	var backtrack func(tokenIndex int)
+	var backtrack func(int)
 	backtrack = func(tokenIndex int) {
-		// 基本情况：已经为所有代币对添加了池子
 		if tokenIndex == len(tokens)-1 {
-			// 复制一份完整的路径并存储
-			finalPath := make([]*types.Pool, len(currentPoolPath))
-			copy(finalPath, currentPoolPath)
+			finalPath := make([]*types.Pool, len(currentPath))
+			copy(finalPath, currentPath)
 			paths = append(paths, finalPath)
 			return
 		}
 
-		// 递归步骤
 		tokenA := tokens[tokenIndex]
 		tokenB := tokens[tokenIndex+1]
 
 		availablePools := poolMap[tokenA][tokenB]
 		if len(availablePools) == 0 {
-			// 如果没有池子（理论上不应该发生），则终止这条路径
+			log.Printf("PathFinder: No pools found for %s -> %s", tokenA, tokenB)
 			return
 		}
 
-		// 尝试此步骤的每一个可用池子
 		for _, pool := range availablePools {
-			// 1. 选择
-			currentPoolPath = append(currentPoolPath, pool)
-			// 2. 探索
+			currentPath = append(currentPath, pool)
 			backtrack(tokenIndex + 1)
-			// 3. 回溯（撤销选择）
-			currentPoolPath = currentPoolPath[:len(currentPoolPath)-1]
+			currentPath = currentPath[:len(currentPath)-1]
 		}
 	}
 
-	// 从第一个代币开始（索引0）
 	backtrack(0)
 	return paths
+}
+
+func containsToken(tokens []string, token string) bool {
+	for _, t := range tokens {
+		if t == token {
+			return true
+		}
+	}
+	return false
 }

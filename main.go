@@ -16,45 +16,35 @@ import (
 )
 
 func main() {
-	// 初始化配置
 	if err := config.Init(); err != nil {
 		log.Fatalf("Failed to initialize config: %v", err)
 	}
 
-	log.Println("Starting DEX Aggregator with Redis and environment config...")
+	log.Println("Starting DEX Aggregator with Redis configuration...")
 
-	// 使用配置初始化Redis缓存
 	store := cache.NewRedisStore(
 		config.AppConfig.Redis.Addr,
 		config.AppConfig.Redis.Password,
 	)
 
-	// 初始化数据收集器
 	poolCollector := collector.NewMockPoolCollector(store)
 
-	// 初始化模拟数据
 	log.Println("Initializing mock pool data...")
 	if err := poolCollector.InitMockPools(); err != nil {
 		log.Fatalf("Failed to initialize mock data: %v", err)
 	}
 
-	// 使用配置中的基础代币初始化路由引擎
 	router := aggregator.NewRouter(store)
-
-	// 初始化API handler
 	handler := api.NewHandler(router, store)
 
-	// 设置HTTP路由
 	r := mux.NewRouter()
 
-	// 注册API端点
 	r.HandleFunc("/api/v1/quote", handler.GetQuote).Methods("POST")
 	r.HandleFunc("/api/v1/pools", handler.GetPools).Methods("GET")
 	r.HandleFunc("/api/v1/pools/search", handler.GetPoolsByTokens).Methods("GET")
 	r.HandleFunc("/health", handler.HealthCheck).Methods("GET")
-	r.HandleFunc("/config", handler.GetConfig).Methods("GET") // 新增配置查看端点
+	r.HandleFunc("/config", handler.GetConfig).Methods("GET")
 
-	// 主页
 	r.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, `
         <html>
@@ -80,7 +70,6 @@ func main() {
         `, config.AppConfig.Server.Port, config.AppConfig.Redis.Addr, len(config.AppConfig.DEX.BaseTokens))
 	})
 
-	// 启动HTTP服务器
 	port := ":" + config.AppConfig.Server.Port
 	log.Printf("HTTP server starting on http://localhost%s", port)
 

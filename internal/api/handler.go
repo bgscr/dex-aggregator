@@ -28,9 +28,7 @@ func NewHandler(router *aggregator.Router, cache cache.Store) *Handler {
 	}
 }
 
-// Quote endpoint
 func (h *Handler) GetQuote(w http.ResponseWriter, r *http.Request) {
-	// Check content type
 	contentType := r.Header.Get("Content-Type")
 	if contentType != "application/json" {
 		log.Printf("Invalid content type: %s", contentType)
@@ -47,7 +45,6 @@ func (h *Handler) GetQuote(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("Quote request: %s -> %s, amount: %s", req.TokenIn, req.TokenOut, req.AmountIn.String())
 
-	// Parameter validation
 	if req.TokenIn == "" || req.TokenOut == "" {
 		http.Error(w, "tokenIn and tokenOut are required", http.StatusBadRequest)
 		return
@@ -72,7 +69,6 @@ func (h *Handler) GetQuote(w http.ResponseWriter, r *http.Request) {
 		req.MaxHops = 3
 	}
 
-	// Get best quote
 	resp, err := h.router.GetBestQuote(r.Context(), &req)
 	if err != nil {
 		log.Printf("Quote calculation failed: %v", err)
@@ -86,7 +82,6 @@ func (h *Handler) GetQuote(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-// Health check endpoint
 func (h *Handler) HealthCheck(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{
@@ -94,7 +89,6 @@ func (h *Handler) HealthCheck(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Pools list endpoint
 func (h *Handler) GetPools(w http.ResponseWriter, r *http.Request) {
 	pools, err := h.cache.GetAllPools(r.Context())
 	if err != nil {
@@ -106,7 +100,6 @@ func (h *Handler) GetPools(w http.ResponseWriter, r *http.Request) {
 		pools = []*types.Pool{}
 	}
 
-	// Create response with pool count
 	response := map[string]interface{}{
 		"count": len(pools),
 		"pools": pools,
@@ -116,7 +109,6 @@ func (h *Handler) GetPools(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
-// Get pool by address endpoint
 func (h *Handler) GetPoolByAddress(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	address := vars["address"]
@@ -139,7 +131,6 @@ func (h *Handler) GetPoolByAddress(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(pool)
 }
 
-// Get pools by tokens endpoint
 func (h *Handler) GetPoolsByTokens(w http.ResponseWriter, r *http.Request) {
 	tokenA := r.URL.Query().Get("tokenA")
 	tokenB := r.URL.Query().Get("tokenB")
@@ -149,12 +140,10 @@ func (h *Handler) GetPoolsByTokens(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Normalize addresses for logging
 	normalizedTokenA := strings.ToLower(tokenA)
 	normalizedTokenB := strings.ToLower(tokenB)
 
 	log.Printf("API: Searching pools for token pair: %s / %s", tokenA, tokenB)
-	log.Printf("API: Normalized tokens: %s / %s", normalizedTokenA, normalizedTokenB)
 
 	pools, err := h.cache.GetPoolsByTokens(r.Context(), tokenA, tokenB)
 	if err != nil {
@@ -183,34 +172,6 @@ func (h *Handler) GetPoolsByTokens(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
-// Debug endpoint to check token matching
-func (h *Handler) DebugTokens(w http.ResponseWriter, r *http.Request) {
-	tokenA := "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2" // WETH
-	tokenB := "0xdac17f958d2ee523a2206206994597c13d831ec7" // USDT
-
-	pools, err := h.cache.GetPoolsByTokens(r.Context(), tokenA, tokenB)
-	if err != nil {
-		http.Error(w, "Search failed: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	allPools, _ := h.cache.GetAllPools(r.Context())
-
-	response := map[string]interface{}{
-		"searchTokens": map[string]string{
-			"tokenA": tokenA,
-			"tokenB": tokenB,
-		},
-		"foundPools": len(pools),
-		"totalPools": len(allPools),
-		"allPools":   allPools,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
-}
-
-// 新增配置查看端点
 func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 	configInfo := map[string]interface{}{
 		"server": map[string]interface{}{

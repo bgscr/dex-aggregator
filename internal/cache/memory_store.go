@@ -11,10 +11,9 @@ import (
 	"dex-aggregator/internal/types"
 )
 
-// MemoryStore in-memory storage implementation
 type MemoryStore struct {
 	pools      map[string]*types.Pool
-	tokenPairs map[string]map[string][]string // tokenA -> tokenB -> []poolAddress
+	tokenPairs map[string]map[string][]string
 	mutex      sync.RWMutex
 }
 
@@ -37,16 +36,21 @@ func (ms *MemoryStore) StorePool(ctx context.Context, pool *types.Pool) error {
 		pool.Reserve1 = big.NewInt(0)
 	}
 
+	// Ensure token addresses are lowercase for consistency
+	pool.Token0.Address = strings.ToLower(pool.Token0.Address)
+	pool.Token1.Address = strings.ToLower(pool.Token1.Address)
+
 	// Store pool
 	ms.pools[pool.Address] = pool
 
-	// Create token pair index (normalize addresses to lowercase)
-	token0 := strings.ToLower(pool.Token0.Address)
-	token1 := strings.ToLower(pool.Token1.Address)
+	// Create token pair index with normalized addresses
+	token0 := pool.Token0.Address
+	token1 := pool.Token1.Address
 
 	log.Printf("Storing pool: %s, Tokens: %s(%s) / %s(%s)",
 		pool.Address, pool.Token0.Symbol, token0, pool.Token1.Symbol, token1)
 
+	// Initialize maps if needed
 	if ms.tokenPairs[token0] == nil {
 		ms.tokenPairs[token0] = make(map[string][]string)
 	}
@@ -54,6 +58,7 @@ func (ms *MemoryStore) StorePool(ctx context.Context, pool *types.Pool) error {
 		ms.tokenPairs[token1] = make(map[string][]string)
 	}
 
+	// Add pool addresses to both directions
 	ms.tokenPairs[token0][token1] = append(ms.tokenPairs[token0][token1], pool.Address)
 	ms.tokenPairs[token1][token0] = append(ms.tokenPairs[token1][token0], pool.Address)
 
@@ -78,16 +83,13 @@ func (ms *MemoryStore) GetPoolsByTokens(ctx context.Context, tokenA, tokenB stri
 	ms.mutex.RLock()
 	defer ms.mutex.RUnlock()
 
-	// 确保传入的参数已经是小写，但这里再确认一次
 	tokenA = strings.ToLower(tokenA)
 	tokenB = strings.ToLower(tokenB)
 
 	log.Printf("Cache lookup for tokens: %s <-> %s", tokenA, tokenB)
-	log.Printf("Available token pairs in cache: %v", ms.getAvailableTokenPairs())
 
 	var pools []*types.Pool
 
-	// Find pools for tokenA -> tokenB
 	if pairs, ok := ms.tokenPairs[tokenA]; ok {
 		if poolAddrs, ok := pairs[tokenB]; ok {
 			for _, addr := range poolAddrs {
@@ -101,17 +103,6 @@ func (ms *MemoryStore) GetPoolsByTokens(ctx context.Context, tokenA, tokenB stri
 	log.Printf("Found %d pools for token pair %s/%s", len(pools), tokenA, tokenB)
 
 	return pools, nil
-}
-
-// Helper method to get available token pairs for debugging
-func (ms *MemoryStore) getAvailableTokenPairs() []string {
-	var pairs []string
-	for tokenA, subPairs := range ms.tokenPairs {
-		for tokenB := range subPairs {
-			pairs = append(pairs, fmt.Sprintf("%s-%s", tokenA, tokenB))
-		}
-	}
-	return pairs
 }
 
 func (ms *MemoryStore) GetAllPools(ctx context.Context) ([]*types.Pool, error) {

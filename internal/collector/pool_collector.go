@@ -12,7 +12,6 @@ import (
 	"dex-aggregator/internal/types"
 )
 
-// MockPoolCollector mock data collector
 type MockPoolCollector struct {
 	cache     cache.Store
 	exchanges []*types.Exchange
@@ -40,11 +39,9 @@ func NewMockPoolCollector(cache cache.Store) *MockPoolCollector {
 	}
 }
 
-// Initialize mock pool data
 func (mpc *MockPoolCollector) InitMockPools() error {
 	ctx := context.Background()
 
-	// Major trading pairs - use consistent lowercase addresses
 	majorPairs := []struct {
 		name   string
 		token0 types.Token
@@ -53,12 +50,12 @@ func (mpc *MockPoolCollector) InitMockPools() error {
 		{
 			name: "WETH/USDT",
 			token0: types.Token{
-				Address:  "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", // WETH lowercase
+				Address:  "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
 				Symbol:   "WETH",
 				Decimals: 18,
 			},
 			token1: types.Token{
-				Address:  "0xdac17f958d2ee523a2206206994597c13d831ec7", // USDT lowercase
+				Address:  "0xdac17f958d2ee523a2206206994597c13d831ec7",
 				Symbol:   "USDT",
 				Decimals: 6,
 			},
@@ -66,12 +63,12 @@ func (mpc *MockPoolCollector) InitMockPools() error {
 		{
 			name: "WETH/USDC",
 			token0: types.Token{
-				Address:  "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", // WETH
+				Address:  "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
 				Symbol:   "WETH",
 				Decimals: 18,
 			},
 			token1: types.Token{
-				Address:  "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", // USDC
+				Address:  "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
 				Symbol:   "USDC",
 				Decimals: 6,
 			},
@@ -79,12 +76,12 @@ func (mpc *MockPoolCollector) InitMockPools() error {
 		{
 			name: "WETH/DAI",
 			token0: types.Token{
-				Address:  "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", // WETH
+				Address:  "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
 				Symbol:   "WETH",
 				Decimals: 18,
 			},
 			token1: types.Token{
-				Address:  "0x6b175474e89094c44da98b954eedeac495271d0f", // DAI
+				Address:  "0x6b175474e89094c44da98b954eedeac495271d0f",
 				Symbol:   "DAI",
 				Decimals: 18,
 			},
@@ -92,12 +89,12 @@ func (mpc *MockPoolCollector) InitMockPools() error {
 		{
 			name: "USDC/USDT",
 			token0: types.Token{
-				Address:  "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", // USDC
+				Address:  "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
 				Symbol:   "USDC",
 				Decimals: 6,
 			},
 			token1: types.Token{
-				Address:  "0xdac17f958d2ee523a2206206994597c13d831ec7", // USDT
+				Address:  "0xdac17f958d2ee523a2206206994597c13d831ec7",
 				Symbol:   "USDT",
 				Decimals: 6,
 			},
@@ -113,8 +110,8 @@ func (mpc *MockPoolCollector) InitMockPools() error {
 				Version:     exchange.Version,
 				Token0:      pair.token0,
 				Token1:      pair.token1,
-				Reserve0:    big.NewInt(1000000000000000000), // 1 ETH or equivalent
-				Reserve1:    big.NewInt(2000000000),          // 2000 USDT/USDC or equivalent
+				Reserve0:    big.NewInt(1000000000000000000), // 1 ETH
+				Reserve1:    big.NewInt(2000000000),          // 2000 USDT/USDC
 				Fee:         300,
 				LastUpdated: time.Now(),
 			}
@@ -125,8 +122,8 @@ func (mpc *MockPoolCollector) InitMockPools() error {
 				// These are fine with default values
 				pool.Reserve1 = big.NewInt(2000000000)
 			case "WETH/DAI":
-				// 18位小数的池子，2000 * 1e18
-				pool.Reserve1 = new(big.Int).SetBytes(big.NewInt(2000).Mul(big.NewInt(2000), new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil)).Bytes())
+				// Fix: 2000 DAI = 2000 * 10^18
+				pool.Reserve1 = new(big.Int).Mul(big.NewInt(2000), new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil))
 			case "USDC/USDT":
 				pool.Reserve0 = big.NewInt(1000000000) // 1000 USDC
 				pool.Reserve1 = big.NewInt(1000000000) // 1000 USDT
@@ -136,10 +133,9 @@ func (mpc *MockPoolCollector) InitMockPools() error {
 			if err != nil {
 				log.Printf("Failed to store pool: %v", err)
 			} else {
-				log.Printf("✓ Created %s pool: %s (Tokens: %s/%s)",
+				log.Printf("✓ Created %s pool: %s (Reserves: %s/%s)",
 					exchange.Name, pair.name,
-					strings.ToLower(pair.token0.Address),
-					strings.ToLower(pair.token1.Address))
+					pool.Reserve0.String(), pool.Reserve1.String())
 				poolCount++
 			}
 		}
@@ -147,15 +143,19 @@ func (mpc *MockPoolCollector) InitMockPools() error {
 
 	log.Printf("Successfully created %d mock pools", poolCount)
 
-	// Verify pools were stored
-	allPools, _ := mpc.cache.GetAllPools(ctx)
-	log.Printf("Verification: %d pools now in cache", len(allPools))
+	// Verify pools were stored correctly
+	allPools, err := mpc.cache.GetAllPools(ctx)
+	if err != nil {
+		log.Printf("Failed to get pools for verification: %v", err)
+	} else {
+		log.Printf("Verification: %d pools now in cache", len(allPools))
 
-	// Debug: print all stored token addresses
-	for _, pool := range allPools {
-		log.Printf("Stored pool tokens: %s (%s) / %s (%s)",
-			pool.Token0.Symbol, pool.Token0.Address,
-			pool.Token1.Symbol, pool.Token1.Address)
+		// Debug: print token addresses to verify they're lowercase
+		for _, pool := range allPools {
+			log.Printf("Pool tokens: %s (%s) / %s (%s)",
+				pool.Token0.Symbol, pool.Token0.Address,
+				pool.Token1.Symbol, pool.Token1.Address)
+		}
 	}
 
 	return nil

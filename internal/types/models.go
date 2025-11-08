@@ -83,10 +83,11 @@ func (q *QuoteRequest) MarshalJSON() ([]byte, error) {
 
 // QuoteResponse response for price quote
 type QuoteResponse struct {
-	AmountOut   *big.Int     `json:"amountOut"`
-	Paths       []*TradePath `json:"paths"`
-	BestPath    *TradePath   `json:"bestPath"`
-	GasEstimate *big.Int     `json:"gasEstimate"`
+	AmountOut      *big.Int     `json:"amountOut"`
+	Paths          []*TradePath `json:"paths"`
+	BestPath       *TradePath   `json:"bestPath"`
+	GasEstimate    *big.Int     `json:"gasEstimate"`
+	ProcessingTime int64        `json:"processingTime,omitempty"` // Processing time in milliseconds
 }
 
 // MarshalJSON custom marshaler for QuoteResponse to handle big.Int

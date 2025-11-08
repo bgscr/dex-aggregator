@@ -5,15 +5,17 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 )
 
 type Config struct {
-	Server   ServerConfig
-	Redis    RedisConfig
-	Ethereum EthereumConfig
-	DEX      DEXConfig
+	Server      ServerConfig
+	Redis       RedisConfig
+	Ethereum    EthereumConfig
+	DEX         DEXConfig
+	Performance PerformanceConfig
 }
 
 type ServerConfig struct {
@@ -35,6 +37,15 @@ type EthereumConfig struct {
 
 type DEXConfig struct {
 	BaseTokens []string
+}
+
+type PerformanceConfig struct {
+	MaxConcurrentPaths int           `json:"max_concurrent_paths"`
+	CacheTTL           time.Duration `json:"cache_ttl"`
+	RequestTimeout     time.Duration `json:"request_timeout"`
+	MaxHops            int           `json:"max_hops"`
+	MaxSlippage        float64       `json:"max_slippage"`
+	MaxPaths           int           `json:"max_paths"`
 }
 
 var AppConfig *Config
@@ -67,6 +78,14 @@ func Init() error {
 				"0x6b175474e89094c44da98b954eedeac495271d0f",
 			}),
 		},
+		Performance: PerformanceConfig{
+			MaxConcurrentPaths: getEnvAsInt("MAX_CONCURRENT_PATHS", 10),
+			CacheTTL:           time.Duration(getEnvAsInt("CACHE_TTL_SECONDS", 300)) * time.Second,
+			RequestTimeout:     time.Duration(getEnvAsInt("REQUEST_TIMEOUT_SECONDS", 30)) * time.Second,
+			MaxHops:            getEnvAsInt("MAX_HOPS", 3),
+			MaxSlippage:        getEnvAsFloat("MAX_SLIPPAGE", 5.0),
+			MaxPaths:           getEnvAsInt("MAX_PATHS", 20),
+		},
 	}
 
 	return nil
@@ -90,6 +109,14 @@ func getEnvAsInt(key string, defaultValue int) int {
 func getEnvAsInt64(key string, defaultValue int64) int64 {
 	valueStr := getEnv(key, "")
 	if value, err := strconv.ParseInt(valueStr, 10, 64); err == nil {
+		return value
+	}
+	return defaultValue
+}
+
+func getEnvAsFloat(key string, defaultValue float64) float64 {
+	valueStr := getEnv(key, "")
+	if value, err := strconv.ParseFloat(valueStr, 64); err == nil {
 		return value
 	}
 	return defaultValue

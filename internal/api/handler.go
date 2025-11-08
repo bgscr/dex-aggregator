@@ -196,3 +196,32 @@ func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(configInfo)
 }
+
+// GetCacheStats returns cache performance statistics
+func (h *Handler) GetCacheStats(w http.ResponseWriter, r *http.Request) {
+	if twoLevelCache, ok := h.cache.(*cache.TwoLevelCache); ok {
+		stats := twoLevelCache.GetStats()
+
+		response := map[string]interface{}{
+			"local_hits":      stats.LocalHits,
+			"local_misses":    stats.LocalMisses,
+			"redis_hits":      stats.RedisHits,
+			"redis_misses":    stats.RedisMisses,
+			"local_hit_ratio": calculateHitRatio(stats.LocalHits, stats.LocalMisses),
+			"redis_hit_ratio": calculateHitRatio(stats.RedisHits, stats.RedisMisses),
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	} else {
+		http.Error(w, "Cache statistics not available", http.StatusNotImplemented)
+	}
+}
+
+func calculateHitRatio(hits, misses int64) float64 {
+	total := hits + misses
+	if total == 0 {
+		return 0.0
+	}
+	return float64(hits) / float64(total) * 100
+}

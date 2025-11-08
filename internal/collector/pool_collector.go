@@ -121,8 +121,12 @@ func (mpc *MockPoolCollector) InitMockPools() error {
 
 			// Adjust reserves based on token pair
 			switch pair.name {
-			case "WETH/USDT", "WETH/USDC", "WETH/DAI":
+			case "WETH/USDT", "WETH/USDC":
 				// These are fine with default values
+				pool.Reserve1 = big.NewInt(2000000000)
+			case "WETH/DAI":
+				// 18位小数的池子，2000 * 1e18
+				pool.Reserve1 = new(big.Int).SetBytes(big.NewInt(2000).Mul(big.NewInt(2000), new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil)).Bytes())
 			case "USDC/USDT":
 				pool.Reserve0 = big.NewInt(1000000000) // 1000 USDC
 				pool.Reserve1 = big.NewInt(1000000000) // 1000 USDT

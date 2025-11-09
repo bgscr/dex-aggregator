@@ -132,10 +132,6 @@ func TestGetQuote_Success(t *testing.T) {
 	mockStore := new(MockStore)
 	perfConfig := config.PerformanceConfig{MaxSlippage: 5.0, MaxHops: 3, MaxConcurrentPaths: 10}
 
-	// Create real Router but use mock Store
-	router := aggregator.NewRouter(mockStore, perfConfig)
-	handler := NewHandler(router, mockStore)
-
 	// Prepare precise test data - ensure no slippage is triggered
 	amountIn := big.NewInt(1000000000000000) // 0.001 ETH
 
@@ -169,7 +165,13 @@ func TestGetQuote_Success(t *testing.T) {
 			Fee:      300,
 		},
 	}
-	mockStore.On("GetAllPools", mock.Anything).Return(mockPools, nil)
+	// Set expectation *BEFORE* NewRouter is called.
+	// It's called twice: 1. By NewPathFinder (initial load), 2. By GetBestQuote (logging).
+	mockStore.On("GetAllPools", mock.Anything).Return(mockPools, nil).Twice()
+
+	// Create real Router but use mock Store
+	router := aggregator.NewRouter(mockStore, perfConfig)
+	handler := NewHandler(router, mockStore)
 
 	// Create request
 	req := httptest.NewRequest("POST", "/api/v1/quote", bytes.NewReader(body))
@@ -203,14 +205,13 @@ func TestGetQuote_Success(t *testing.T) {
 
 	// Verify output amount is in reasonable range
 	assert.True(t, amountOut.Cmp(big.NewInt(1000)) > 0, "AmountOut should be positive: %s", amountOut.String())
+
+	mockStore.AssertExpectations(t)
 }
 
 func TestGetQuote_WithSlippage(t *testing.T) {
 	mockStore := new(MockStore)
 	perfConfig := config.PerformanceConfig{MaxSlippage: 5.0, MaxHops: 3, MaxConcurrentPaths: 10}
-
-	router := aggregator.NewRouter(mockStore, perfConfig)
-	handler := NewHandler(router, mockStore)
 
 	// Use amount that would cause high slippage
 	amountIn, _ := new(big.Int).SetString("50000000000000000000", 10) // 50 ETH
@@ -245,7 +246,11 @@ func TestGetQuote_WithSlippage(t *testing.T) {
 			Fee:      300,
 		},
 	}
-	mockStore.On("GetAllPools", mock.Anything).Return(mockPools, nil)
+	// Set expectation *BEFORE* NewRouter is called.
+	mockStore.On("GetAllPools", mock.Anything).Return(mockPools, nil).Twice()
+
+	router := aggregator.NewRouter(mockStore, perfConfig)
+	handler := NewHandler(router, mockStore)
 
 	req := httptest.NewRequest("POST", "/api/v1/quote", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -267,11 +272,15 @@ func TestGetQuote_WithSlippage(t *testing.T) {
 				"Error should mention slippage or no valid path, got: %s", errorMsg)
 		}
 	}
+	mockStore.AssertExpectations(t)
 }
 
 func TestGetQuote_InvalidJSON(t *testing.T) {
 	mockStore := new(MockStore)
 	perfConfig := config.PerformanceConfig{MaxSlippage: 5.0, MaxHops: 3, MaxConcurrentPaths: 10}
+
+	// Add expectation for the initial load in NewRouter
+	mockStore.On("GetAllPools", mock.Anything).Return([]*types.Pool{}, nil).Once()
 	router := aggregator.NewRouter(mockStore, perfConfig)
 	handler := NewHandler(router, mockStore)
 
@@ -288,6 +297,8 @@ func TestGetQuote_InvalidJSON(t *testing.T) {
 func TestGetQuote_InvalidContentType(t *testing.T) {
 	mockStore := new(MockStore)
 	perfConfig := config.PerformanceConfig{MaxSlippage: 5.0, MaxHops: 3, MaxConcurrentPaths: 10}
+	// Add expectation for the initial load in NewRouter
+	mockStore.On("GetAllPools", mock.Anything).Return([]*types.Pool{}, nil).Once()
 	router := aggregator.NewRouter(mockStore, perfConfig)
 	handler := NewHandler(router, mockStore)
 
@@ -303,6 +314,8 @@ func TestGetQuote_InvalidContentType(t *testing.T) {
 func TestGetQuote_MissingParameters(t *testing.T) {
 	mockStore := new(MockStore)
 	perfConfig := config.PerformanceConfig{MaxSlippage: 5.0, MaxHops: 3, MaxConcurrentPaths: 10}
+	// Add expectation for the initial load in NewRouter
+	mockStore.On("GetAllPools", mock.Anything).Return([]*types.Pool{}, nil).Once()
 	router := aggregator.NewRouter(mockStore, perfConfig)
 	handler := NewHandler(router, mockStore)
 
@@ -323,7 +336,7 @@ func TestGetQuote_MissingParameters(t *testing.T) {
 		},
 		{
 			name:     "Invalid amount",
-			reqBody:  map[string]interface{}{"tokenIn": "0x123", "tokenOut": "0x456", "amountIn": "0"},
+			reqBody:  map[string]interface{}{"tokenIn": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2", "tokenOut": "0xdac17f958d2ee523a2206206994597c13d831ec7", "amountIn": "0"},
 			expected: http.StatusBadRequest,
 		},
 	}
@@ -345,6 +358,8 @@ func TestGetQuote_MissingParameters(t *testing.T) {
 func TestGetPools(t *testing.T) {
 	mockStore := new(MockStore)
 	perfConfig := config.PerformanceConfig{MaxSlippage: 5.0, MaxHops: 3, MaxConcurrentPaths: 10}
+	// Add expectation for the initial load in NewRouter
+	mockStore.On("GetAllPools", mock.Anything).Return([]*types.Pool{}, nil).Once()
 	router := aggregator.NewRouter(mockStore, perfConfig)
 	handler := NewHandler(router, mockStore)
 
@@ -367,7 +382,8 @@ func TestGetPools(t *testing.T) {
 			Reserve1: big.NewInt(2000000),
 		},
 	}
-	mockStore.On("GetAllPools", mock.Anything).Return(expectedPools, nil)
+	// This is the expectation for the handler call itself
+	mockStore.On("GetAllPools", mock.Anything).Return(expectedPools, nil).Once()
 
 	req := httptest.NewRequest("GET", "/api/v1/pools", nil)
 	w := httptest.NewRecorder()
@@ -375,7 +391,6 @@ func TestGetPools(t *testing.T) {
 	handler.GetPools(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	mockStore.AssertCalled(t, "GetAllPools", mock.Anything)
 
 	var response map[string]interface{}
 	err := json.Unmarshal(w.Body.Bytes(), &response)
@@ -389,11 +404,15 @@ func TestGetPools(t *testing.T) {
 	poolData := poolsData[0].(map[string]interface{})
 	assert.Equal(t, "pool1", poolData["address"])
 	assert.Equal(t, "Uniswap V2", poolData["exchange"])
+
+	mockStore.AssertExpectations(t)
 }
 
 func TestGetPoolsByTokens(t *testing.T) {
 	mockStore := new(MockStore)
 	perfConfig := config.PerformanceConfig{MaxSlippage: 5.0, MaxHops: 3, MaxConcurrentPaths: 10}
+	// Add expectation for the initial load in NewRouter
+	mockStore.On("GetAllPools", mock.Anything).Return([]*types.Pool{}, nil).Once()
 	router := aggregator.NewRouter(mockStore, perfConfig)
 	handler := NewHandler(router, mockStore)
 
@@ -436,6 +455,8 @@ func TestGetPoolsByTokens(t *testing.T) {
 func TestHealthCheck(t *testing.T) {
 	mockStore := new(MockStore)
 	perfConfig := config.PerformanceConfig{MaxSlippage: 5.0, MaxHops: 3, MaxConcurrentPaths: 10}
+	// Add expectation for the initial load in NewRouter
+	mockStore.On("GetAllPools", mock.Anything).Return([]*types.Pool{}, nil).Once()
 	router := aggregator.NewRouter(mockStore, perfConfig)
 	handler := NewHandler(router, mockStore)
 
@@ -455,6 +476,8 @@ func TestHealthCheck(t *testing.T) {
 func TestGetConfig(t *testing.T) {
 	mockStore := new(MockStore)
 	perfConfig := config.PerformanceConfig{MaxSlippage: 5.0, MaxHops: 3, MaxConcurrentPaths: 10}
+	// Add expectation for the initial load in NewRouter
+	mockStore.On("GetAllPools", mock.Anything).Return([]*types.Pool{}, nil).Once()
 	router := aggregator.NewRouter(mockStore, perfConfig)
 	handler := NewHandler(router, mockStore)
 
@@ -489,6 +512,8 @@ func TestGetConfig(t *testing.T) {
 func TestGetPoolByAddress(t *testing.T) {
 	mockStore := new(MockStore)
 	perfConfig := config.PerformanceConfig{MaxSlippage: 5.0, MaxHops: 3, MaxConcurrentPaths: 10}
+	// Add expectation for the initial load in NewRouter
+	mockStore.On("GetAllPools", mock.Anything).Return([]*types.Pool{}, nil).Once()
 	router := aggregator.NewRouter(mockStore, perfConfig)
 	handler := NewHandler(router, mockStore)
 
@@ -530,6 +555,8 @@ func TestGetCacheStats_WithTwoLevelCache(t *testing.T) {
 	// Create real Router
 	mockStore := new(MockStore)
 	perfConfig := config.PerformanceConfig{MaxSlippage: 5.0, MaxHops: 3, MaxConcurrentPaths: 10}
+	// Add expectation for the initial load in NewRouter
+	mockStore.On("GetAllPools", mock.Anything).Return([]*types.Pool{}, nil).Once()
 	router := aggregator.NewRouter(mockStore, perfConfig)
 
 	// Create mock TwoLevelCache
@@ -582,6 +609,8 @@ func TestGetCacheStats_WithTwoLevelCache(t *testing.T) {
 func TestGetCacheStats_WithoutTwoLevelCache(t *testing.T) {
 	perfConfig := config.PerformanceConfig{MaxSlippage: 5.0, MaxHops: 3, MaxConcurrentPaths: 10}
 	mockStore := new(MockStore)
+	// Add expectation for the initial load in NewRouter
+	mockStore.On("GetAllPools", mock.Anything).Return([]*types.Pool{}, nil).Once()
 	router := aggregator.NewRouter(mockStore, perfConfig)
 
 	// Use regular MockStore, not TwoLevelCache

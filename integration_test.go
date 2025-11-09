@@ -22,11 +22,6 @@ func TestIntegration_CompleteFlow(t *testing.T) {
 	// Create in-memory cache for testing
 	store := cache.NewMemoryStore()
 
-	// Create router
-	perfConfig := config.PerformanceConfig{MaxSlippage: 5.0, MaxHops: 3, MaxConcurrentPaths: 10, CacheTTL: 60 * time.Second}
-	router := aggregator.NewRouter(store, perfConfig)
-	assert.NotNil(t, router)
-
 	// Create test pool - using big.Int SetString for large numbers
 	reserve0, _ := new(big.Int).SetString("10000000000000000000", 10) // 10 ETH
 	reserve1 := big.NewInt(20000000000)                               // 20000 USDT
@@ -49,9 +44,15 @@ func TestIntegration_CompleteFlow(t *testing.T) {
 		Fee:      300,
 	}
 
-	// Store pool
+	// Store pool *BEFORE* initializing the router
+	// This ensures the PathFinder's initial graph load sees this pool.
 	err = store.StorePool(context.Background(), pool)
 	assert.NoError(t, err)
+
+	// Create router
+	perfConfig := config.PerformanceConfig{MaxSlippage: 5.0, MaxHops: 3, MaxConcurrentPaths: 10, CacheTTL: 60 * time.Second}
+	router := aggregator.NewRouter(store, perfConfig)
+	assert.NotNil(t, router)
 
 	// Create quote request - using smaller amount
 	req := &types.QuoteRequest{
@@ -64,15 +65,13 @@ func TestIntegration_CompleteFlow(t *testing.T) {
 	// Get quote
 	response, err := router.GetBestQuote(context.Background(), req)
 
-	// Due to test environment limitations, mainly verify the flow doesn't error
-	if err != nil {
-		// It's normal when no path is found
-		assert.Contains(t, err.Error(), "no valid path")
-	} else {
-		assert.NotNil(t, response)
-		if response != nil {
-			assert.NotNil(t, response.AmountOut)
-		}
+	// In this test, we now EXPECT to find a path.
+	assert.NoError(t, err)
+	assert.NotNil(t, response)
+	if response != nil {
+		assert.NotNil(t, response.AmountOut)
+		// Check that amount out is positive
+		assert.True(t, response.AmountOut.Cmp(big.NewInt(0)) > 0)
 	}
 }
 

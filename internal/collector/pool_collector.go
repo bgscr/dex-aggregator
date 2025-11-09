@@ -17,25 +17,12 @@ type MockPoolCollector struct {
 	exchanges []*types.Exchange
 }
 
-func NewMockPoolCollector(cache cache.Store) *MockPoolCollector {
-	exchanges := []*types.Exchange{
-		{
-			Name:    "Uniswap V2",
-			Factory: "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f",
-			Router:  "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D",
-			Version: "v2",
-		},
-		{
-			Name:    "SushiSwap",
-			Factory: "0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac",
-			Router:  "0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F",
-			Version: "v2",
-		},
-	}
-
+// NewMockPoolCollector 签名已更改: 接收来自配置的 exchanges
+func NewMockPoolCollector(cache cache.Store, exchanges []*types.Exchange) *MockPoolCollector {
+	// 移除硬编码的 exchanges
 	return &MockPoolCollector{
 		cache:     cache,
-		exchanges: exchanges,
+		exchanges: exchanges, // 存储从配置中传入的 exchanges
 	}
 }
 
@@ -206,6 +193,8 @@ func (mpc *MockPoolCollector) InitMockPools() error {
 	// Create pools for each exchange
 	uniquePools := make(map[string]bool)
 	poolCount := 0
+
+	// 更改: 遍历 mpc.exchanges (来自配置)
 	for _, exchange := range mpc.exchanges {
 		for i, pair := range pairs {
 
@@ -220,8 +209,8 @@ func (mpc *MockPoolCollector) InitMockPools() error {
 
 			pool := &types.Pool{
 				Address:     fmt.Sprintf("%s-%s-%d", strings.ToLower(strings.ReplaceAll(exchange.Name, " ", "")), strings.ToLower(strings.ReplaceAll(pair.name, "/", "-")), i),
-				Exchange:    exchange.Name,
-				Version:     exchange.Version,
+				Exchange:    exchange.Name,    // 使用配置中的 Exchange 名称
+				Version:     exchange.Version, // 使用配置中的 Exchange 版本
 				Token0:      pair.token0,
 				Token1:      pair.token1,
 				Reserve0:    pair.reserve0,

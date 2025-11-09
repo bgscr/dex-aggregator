@@ -38,10 +38,7 @@ func NewRouter(cache cache.Store, perfConfig config.PerformanceConfig) *Router {
 // GetBestQuote finds the best trading quote with optimized path search
 func (r *Router) GetBestQuote(ctx context.Context, req *types.QuoteRequest) (*types.QuoteResponse, error) {
 	startTime := time.Now()
-	if err := r.pathFinder.RefreshGraph(ctx); err != nil {
-		log.Printf("WARN: Graph refresh failed during quote: %v", err)
-		// Even if the refresh fails, we can still try to continue with the old graph data
-	}
+
 	log.Printf("Quote request: %s -> %s, amount: %s", req.TokenIn, req.TokenOut, req.AmountIn.String())
 
 	tokenIn := strings.ToLower(req.TokenIn)

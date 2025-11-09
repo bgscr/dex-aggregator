@@ -42,6 +42,7 @@ func (m *MockStore) GetAllPools(ctx context.Context) ([]*types.Pool, error) {
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
+	// FIX: Changed (*types.Pool) to ([]*types.Pool) to match interface
 	return args.Get(0).([]*types.Pool), args.Error(1)
 }
 
@@ -126,7 +127,6 @@ func TestRouter_GetBestQuote(t *testing.T) {
 		MaxConcurrentPaths: 10,
 	}
 	mockStore := new(MockStore)
-	router := NewRouter(mockStore, perfConfig)
 
 	// Mock pools returned by cache
 	mockPools := []*types.Pool{
@@ -139,7 +139,12 @@ func TestRouter_GetBestQuote(t *testing.T) {
 			Reserve1: big.NewInt(2000000000000),       // Larger USDT reserves
 		},
 	}
-	mockStore.On("GetAllPools", mock.Anything).Return(mockPools, nil)
+
+	// Set expectation *BEFORE* NewRouter is called.
+	// It's called twice: 1. By NewPathFinder (initial load), 2. By GetBestQuote (logging).
+	mockStore.On("GetAllPools", mock.Anything).Return(mockPools, nil).Twice()
+
+	router := NewRouter(mockStore, perfConfig)
 
 	req := &types.QuoteRequest{
 		TokenIn:  "0xweth",
@@ -148,22 +153,18 @@ func TestRouter_GetBestQuote(t *testing.T) {
 		MaxHops:  3,
 	}
 
-	// Due to complexity of path finding, mainly test function call doesn't error
 	response, err := router.GetBestQuote(context.Background(), req)
 
-	// Even if no path is found, shouldn't error (except for specific errors)
-	if err != nil {
-		assert.Contains(t, err.Error(), "no valid path")
-	} else {
-		assert.NotNil(t, response)
-	}
+	// We now expect a valid path
+	assert.NoError(t, err)
+	assert.NotNil(t, response)
+	assert.True(t, response.AmountOut.Cmp(big.NewInt(0)) > 0)
 
-	mockStore.AssertCalled(t, "GetAllPools", mock.Anything)
+	mockStore.AssertExpectations(t)
 }
 
 func TestPathFinder_FindDirectPaths(t *testing.T) {
 	mockStore := new(MockStore)
-	pathFinder := NewPathFinder(mockStore, NewPriceCalculator())
 
 	// Build test data - ensure sufficient liquidity
 	mockPools := []*types.Pool{
@@ -182,14 +183,25 @@ func TestPathFinder_FindDirectPaths(t *testing.T) {
 			Reserve1: big.NewInt(2000000000),
 		},
 	}
-	mockStore.On("GetAllPools", mock.Anything).Return(mockPools, nil)
 
+	// This mock is for the *initial load* in NewPathFinder
+	// It must be set *BEFORE* NewPathFinder is called.
+	mockStore.On("GetAllPools", mock.Anything).Return(mockPools, nil).Once()
+
+	// Now, create the PathFinder
+	pathFinder := NewPathFinder(mockStore, NewPriceCalculator())
+
+	// We can optionally test the RefreshGraph function again explicitly
+	// Add a second expectation for this explicit call.
+	mockStore.On("GetAllPools", mock.Anything).Return(mockPools, nil).Once()
 	err := pathFinder.RefreshGraph(context.Background())
 	assert.NoError(t, err)
 
 	paths, err := pathFinder.FindBestPaths(context.Background(), "0xtokena", "0xtokenb", big.NewInt(1000), 3, 10)
 	assert.NoError(t, err)
 	assert.Greater(t, len(paths), 0)
+
+	mockStore.AssertExpectations(t)
 }
 
 func TestRouter_FindOptimalPath(t *testing.T) {
@@ -199,6 +211,10 @@ func TestRouter_FindOptimalPath(t *testing.T) {
 		MaxConcurrentPaths: 10,
 	}
 	mockStore := new(MockStore)
+
+	// Add expectation for the initial load in NewRouter
+	mockStore.On("GetAllPools", mock.Anything).Return([]*types.Pool{}, nil).Once()
+
 	router := NewRouter(mockStore, perfConfig)
 
 	tradePaths := []*types.TradePath{
@@ -219,4 +235,6 @@ func TestRouter_FindOptimalPath(t *testing.T) {
 	bestPath := router.findOptimalPath(tradePaths)
 	assert.NotNil(t, bestPath)
 	assert.Equal(t, int64(1200), bestPath.AmountOut.Int64())
+
+	mockStore.AssertExpectations(t)
 }

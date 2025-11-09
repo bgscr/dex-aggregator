@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"strings"
 	"sync"
+	"time"
 
 	"dex-aggregator/internal/cache"
 	"dex-aggregator/internal/types"
@@ -38,10 +39,38 @@ func NewPathFinder(cache cache.Store, priceCalc *PriceCalculator) *PathFinder {
 		liquidityMap: make(map[string]map[string]*big.Int),
 	}
 
-	// TODO: Start a goroutine here to periodically call pf.RefreshGraph(context.Background())
-	// go pf.runGraphRefresher(context.Background())
+	// 1. 在这里执行第一次、阻塞式的刷新
+	// 这会延长服务器启动时间，但能保证服务启动后立即可用
+	log.Println("PathFinder: Performing initial graph load...")
+	if err := pf.RefreshGraph(context.Background()); err != nil {
+		// 如果启动时无法加载图，服务将无法工作，这是一个致命错误
+		log.Fatalf("PathFinder: Initial graph refresh failed: %v", err)
+	}
+	log.Println("PathFinder: Initial graph load complete.")
+
+	refreshInterval := 30 * time.Second
+	go pf.runGraphRefresher(context.Background(), refreshInterval)
 
 	return pf
+}
+
+func (pf *PathFinder) runGraphRefresher(ctx context.Context, interval time.Duration) {
+	log.Printf("PathFinder: Starting background graph refresher with %v interval", interval)
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			log.Println("PathFinder: Periodic graph refresh triggered...")
+			if err := pf.RefreshGraph(ctx); err != nil {
+				log.Printf("PathFinder: Error during periodic graph refresh: %v", err)
+			}
+		case <-ctx.Done():
+			log.Println("PathFinder: Stopping graph refresher.")
+			return
+		}
+	}
 }
 
 // Graph refresh method

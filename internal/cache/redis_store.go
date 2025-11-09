@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"time"
 
 	"dex-aggregator/internal/types"
@@ -98,12 +99,48 @@ func (rs *RedisStore) GetAllPools(ctx context.Context) ([]*types.Pool, error) {
 		return nil, err
 	}
 
-	var pools []*types.Pool
+	if len(poolAddrs) == 0 {
+		return []*types.Pool{}, nil
+	}
+
+	// 1. 创建一个 Pipeline
+	pipe := rs.client.Pipeline()
+
+	// 2. 将所有 Get 命令加入 Pipeline
+	cmds := make(map[string]*redis.StringCmd, len(poolAddrs))
 	for _, addr := range poolAddrs {
-		pool, err := rs.GetPool(ctx, addr)
-		if err == nil && pool != nil {
-			pools = append(pools, pool)
+		key := fmt.Sprintf("%spool:%s", rs.prefix, addr)
+		cmds[addr] = pipe.Get(ctx, key)
+	}
+
+	// 3. 一次性执行所有命令
+	if _, err := pipe.Exec(ctx); err != nil && err != redis.Nil {
+		// 即使某些key不存在 (redis.Nil)，也不应阻断整个操作
+		// 只有在发生连接错误等严重问题时才返回
+		if err != redis.Nil {
+			log.Printf("Redis pipeline Exec error: %v", err)
+			return nil, err
 		}
+	}
+
+	// 4. 处理结果
+	var pools []*types.Pool
+	for addr, cmd := range cmds {
+		data, err := cmd.Result()
+		if err != nil {
+			if err != redis.Nil {
+				log.Printf("Failed to get pool %s from pipeline: %v", addr, err)
+			}
+			// 如果key不存在或获取失败，则跳过
+			continue
+		}
+
+		var pool types.Pool
+		if err := json.Unmarshal([]byte(data), &pool); err != nil {
+			log.Printf("Failed to unmarshal pool %s: %v", addr, err)
+			continue
+		}
+		pools = append(pools, &pool)
 	}
 
 	return pools, nil

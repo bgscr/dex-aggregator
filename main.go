@@ -11,6 +11,7 @@ import (
 	"dex-aggregator/internal/api"
 	"dex-aggregator/internal/cache"
 	"dex-aggregator/internal/collector"
+	"dex-aggregator/internal/types" // 确保导入 types
 
 	"github.com/gorilla/mux"
 )
@@ -29,7 +30,13 @@ func main() {
 		config.AppConfig.Performance.CacheTTL,
 	)
 
-	poolCollector := collector.NewMockPoolCollector(store)
+	// 修复: 将 []types.Exchange 转换为 []*types.Exchange
+	exchangesPtrs := make([]*types.Exchange, len(config.AppConfig.DEX.Exchanges))
+	for i := range config.AppConfig.DEX.Exchanges {
+		exchangesPtrs[i] = &config.AppConfig.DEX.Exchanges[i]
+	}
+
+	poolCollector := collector.NewMockPoolCollector(store, exchangesPtrs)
 
 	log.Println("Initializing mock pool data...")
 	if err := poolCollector.InitMockPools(); err != nil {
@@ -45,6 +52,7 @@ func main() {
 	r.HandleFunc("/api/v1/quote", handler.GetQuote).Methods("POST")
 	r.HandleFunc("/api/v1/pools", handler.GetPools).Methods("GET")
 	r.HandleFunc("/api/v1/pools/search", handler.GetPoolsByTokens).Methods("GET")
+	r.HandleFunc("/api/v1/pools/{address}", handler.GetPoolByAddress).Methods("GET")
 	r.HandleFunc("/health", handler.HealthCheck).Methods("GET")
 	r.HandleFunc("/config", handler.GetConfig).Methods("GET")
 	r.HandleFunc("/cache/stats", handler.GetCacheStats).Methods("GET")
@@ -76,7 +84,8 @@ func main() {
             </body>
         </html>
         `, config.AppConfig.Server.Port, config.AppConfig.Redis.Addr,
-			len(config.AppConfig.DEX.BaseTokens),
+			// 更改: BaseTokens 现在在顶层
+			len(config.AppConfig.BaseTokens),
 			config.AppConfig.Performance.MaxConcurrentPaths,
 			config.AppConfig.Performance.MaxSlippage)
 	})

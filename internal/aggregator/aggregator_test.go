@@ -163,7 +163,7 @@ func TestRouter_GetBestQuote(t *testing.T) {
 
 func TestPathFinder_FindDirectPaths(t *testing.T) {
 	mockStore := new(MockStore)
-	pathFinder := NewPathFinder(mockStore)
+	pathFinder := NewPathFinder(mockStore, NewPriceCalculator())
 
 	// Build test data - ensure sufficient liquidity
 	mockPools := []*types.Pool{
@@ -183,6 +183,9 @@ func TestPathFinder_FindDirectPaths(t *testing.T) {
 		},
 	}
 	mockStore.On("GetAllPools", mock.Anything).Return(mockPools, nil)
+
+	err := pathFinder.RefreshGraph(context.Background())
+	assert.NoError(t, err)
 
 	paths, err := pathFinder.FindBestPaths(context.Background(), "0xtokena", "0xtokenb", big.NewInt(1000), 3, 10)
 	assert.NoError(t, err)

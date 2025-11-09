@@ -29,7 +29,7 @@ func NewRouter(cache cache.Store, perfConfig config.PerformanceConfig) *Router {
 
 	return &Router{
 		cache:         cache,
-		pathFinder:    NewPathFinder(cache),
+		pathFinder:    NewPathFinder(cache, calculator),
 		calculator:    calculator,
 		maxConcurrent: perfConfig.MaxConcurrentPaths,
 	}
@@ -38,6 +38,10 @@ func NewRouter(cache cache.Store, perfConfig config.PerformanceConfig) *Router {
 // GetBestQuote finds the best trading quote with optimized path search
 func (r *Router) GetBestQuote(ctx context.Context, req *types.QuoteRequest) (*types.QuoteResponse, error) {
 	startTime := time.Now()
+	if err := r.pathFinder.RefreshGraph(ctx); err != nil {
+		log.Printf("WARN: Graph refresh failed during quote: %v", err)
+		// 即使刷新失败，也可能使用旧的图数据继续尝试
+	}
 	log.Printf("Quote request: %s -> %s, amount: %s", req.TokenIn, req.TokenOut, req.AmountIn.String())
 
 	tokenIn := strings.ToLower(req.TokenIn)

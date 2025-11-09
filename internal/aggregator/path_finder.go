@@ -9,14 +9,14 @@ import (
 	"log"
 	"math/big"
 	"strings"
-	"sync/atomic" // 更改: 导入 atomic
+	"sync/atomic" // Change: import atomic
 	"time"
 
 	"dex-aggregator/internal/cache"
 	"dex-aggregator/internal/types"
 )
 
-// 新增: graphData 用于存放路由图的快照
+// Add: graphData to store the routing graph snapshot
 type graphData struct {
 	adj          map[string]map[string]bool
 	poolMap      map[string]map[string][]*types.Pool
@@ -28,8 +28,8 @@ type PathFinder struct {
 	priceCalc *PriceCalculator // Add PriceCalculator dependency
 	maxHops   int
 
-	// 更改: 移除 graphLock, adj, poolMap, liquidityMap
-	// 使用 atomic.Pointer 实现无锁读写
+	// Change: Remove graphLock, adj, poolMap, liquidityMap
+	// Use atomic.Pointer for lock-free read/write
 	graph atomic.Pointer[graphData]
 }
 
@@ -39,21 +39,21 @@ func NewPathFinder(cache cache.Store, priceCalc *PriceCalculator) *PathFinder {
 		cache:     cache,
 		priceCalc: priceCalc, // Inject dependency
 		maxHops:   3,
-		// graph 会在 RefreshGraph 中被初始化
+		// graph will be initialized in RefreshGraph
 	}
 
-	// 1. 在这里执行第一次、阻塞式的刷新
-	// 这会延长服务器启动时间，但能保证服务启动后立即可用
+	// 1. Perform the first blocking refresh here
+	// This will increase server startup time but ensures the service is ready immediately
 	log.Println("PathFinder: Performing initial graph load...")
 	if err := pf.RefreshGraph(context.Background()); err != nil {
-		// 如果启动时无法加载图，服务将无法工作，这是一个致命错误
+		// If the graph fails to load on startup, the service won't work, this is a fatal error
 		log.Fatalf("PathFinder: Initial graph refresh failed: %v", err)
 	}
 	log.Println("PathFinder: Initial graph load complete.")
 
-	// 更改: 从配置中获取刷新间隔
-	// 注意: 我们在 config.go 中定义了它, 但 NewRouter 并没有接收它
-	// 暂时硬编码, 理想情况下应从 config 传入
+	// Change: Get refresh interval from config
+	// Note: We defined it in config.go, but NewRouter doesn't receive it
+	// Hardcode for now, ideally should be passed from config
 	refreshInterval := 30 * time.Second
 	// refreshInterval := config.AppConfig.Performance.GraphRefreshInterval
 	go pf.runGraphRefresher(context.Background(), refreshInterval)
@@ -88,7 +88,7 @@ func (pf *PathFinder) RefreshGraph(ctx context.Context) error {
 		return fmt.Errorf("failed to get pools for graph refresh: %v", err)
 	}
 
-	// Build a new graph (在局部变量中构建)
+	// Build a new graph (Build in local variables)
 	adj := make(map[string]map[string]bool)
 	poolMap := make(map[string]map[string][]*types.Pool)
 	liquidityMap := make(map[string]map[string]*big.Int)
@@ -131,19 +131,14 @@ func (pf *PathFinder) RefreshGraph(ctx context.Context) error {
 		}
 	}
 
-	// 更改: 创建新的 graphData 快照
+	// Change: Create new graphData snapshot
 	newGraph := &graphData{
 		adj:          adj,
 		poolMap:      poolMap,
 		liquidityMap: liquidityMap,
 	}
 
-	// 更改: 原子地替换指针, 而不是使用锁
-	// pf.graphLock.Lock()
-	// pf.adj = adj
-	// pf.poolMap = poolMap
-	// pf.liquidityMap = liquidityMap
-	// pf.graphLock.Unlock()
+	// Change: Atomically replace the pointer instead of using a lock
 	pf.graph.Store(newGraph)
 
 	log.Printf("PathFinder: Graph refreshed, %d pools loaded.", len(allPools))
@@ -207,16 +202,14 @@ func (pf *PathFinder) FindBestPaths(ctx context.Context, tokenIn, tokenOut strin
 	log.Printf("PathFinder: Searching best paths from %s to %s (amountIn: %s, maxHops: %d, maxPaths: %d)",
 		normalizedTokenIn, normalizedTokenOut, amountIn.String(), maxHops, maxPaths)
 
-	// 更改: 原子加载图快照, 移除 RLock
+	// Change: Atomically load graph snapshot, remove RLock
 	g := pf.graph.Load()
 	if g == nil {
 		log.Println("PathFinder: Graph is not initialized")
 		return [][]*types.Pool{}, fmt.Errorf("graph not initialized")
 	}
-	// pf.graphLock.RLock()
-	// defer pf.graphLock.RUnlock()
 
-	// 更改: 使用 'g' (快照) 替代 'pf'
+	// Change: Use 'g' (snapshot) instead of 'pf'
 	if g.adj[normalizedTokenIn] == nil {
 		log.Printf("PathFinder: TokenIn %s not found in graph", normalizedTokenIn)
 		return [][]*types.Pool{}, nil
@@ -238,10 +231,10 @@ func (pf *PathFinder) FindBestPaths(ctx context.Context, tokenIn, tokenOut strin
 
 	// Add all first-hop paths to the queue
 	// Iterate over all neighbors of tokenIn
-	// 更改: 使用 'g'
+	// Change: Use 'g'
 	for neighborToken := range g.adj[normalizedTokenIn] {
 		// Iterate over all pools between tokenIn and neighborToken
-		// 更改: 使用 'g'
+		// Change: Use 'g'
 		for _, pool := range g.poolMap[normalizedTokenIn][neighborToken] {
 			// Simulate trade, calculate first hop output
 			hopAmountOut, err := pf.priceCalc.CalculateOutput(pool, amountIn, normalizedTokenIn)
@@ -291,7 +284,7 @@ func (pf *PathFinder) FindBestPaths(ctx context.Context, tokenIn, tokenOut strin
 		currentHopToken := currentState.lastToken
 		currentHopAmountIn := currentState.amountOut
 
-		// 更改: 使用 'g'
+		// Change: Use 'g'
 		for nextHopToken := range g.adj[currentHopToken] {
 			// Avoid loops (simple check)
 			if pf.pathContainsToken(currentState.path, nextHopToken) {
@@ -299,7 +292,7 @@ func (pf *PathFinder) FindBestPaths(ctx context.Context, tokenIn, tokenOut strin
 			}
 
 			// Iterate over all pools between currentHopToken and nextHopToken
-			// 更改: 使用 'g'
+			// Change: Use 'g'
 			for _, pool := range g.poolMap[currentHopToken][nextHopToken] {
 
 				// Simulate trade

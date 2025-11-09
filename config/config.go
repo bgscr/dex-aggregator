@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"dex-aggregator/internal/types" // 新增: 导入 types
+	"dex-aggregator/internal/types"
 
 	"github.com/joho/godotenv"
-	"gopkg.in/yaml.v3" // 新增: 导入 yaml
+	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
@@ -18,7 +18,7 @@ type Config struct {
 	Redis       RedisConfig       `yaml:"redis"`
 	Ethereum    EthereumConfig    `yaml:"ethereum"`
 	DEX         DEXConfig         `yaml:"dex"`
-	BaseTokens  []string          `yaml:"base_tokens"` // 从 DEXConfig 移到这里
+	BaseTokens  []string          `yaml:"base_tokens"`
 	Performance PerformanceConfig `yaml:"performance"`
 }
 
@@ -40,12 +40,11 @@ type EthereumConfig struct {
 }
 
 type DEXConfig struct {
-	// BaseTokens 字段被移到顶层 Config 结构体
-	Exchanges []types.Exchange `yaml:"exchanges"` // 新增
+	Exchanges []types.Exchange `yaml:"exchanges"`
 }
 
 type PerformanceConfig struct {
-	MaxConcurrentPaths   int           `json:"max_concurrent_paths" yaml:"max_concurrent_paths"` // 注意: api/handler.go 中 GetConfig 依然使用 json 标签, 暂时保留
+	MaxConcurrentPaths   int           `json:"max_concurrent_paths" yaml:"max_concurrent_paths"`
 	CacheTTL             time.Duration `json:"cache_ttl" yaml:"cache_ttl_seconds"`
 	RequestTimeout       time.Duration `json:"request_timeout" yaml:"request_timeout_seconds"`
 	MaxHops              int           `json:"max_hops" yaml:"max_hops"`
@@ -56,7 +55,7 @@ type PerformanceConfig struct {
 
 var AppConfig *Config
 
-// loadConfigFromFile 从 YAML 文件加载默认配置
+// loadConfigFromFile loads default configuration from a YAML file.
 func loadConfigFromFile(path string, config *Config) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -74,22 +73,16 @@ func loadConfigFromFile(path string, config *Config) error {
 }
 
 func Init() error {
-	// 1. 初始化一个空配置
 	AppConfig = &Config{}
 
-	// 2. 从 YAML 加载默认值
-	// 注意：这里的路径是相对于项目根目录
 	if err := loadConfigFromFile("config/config.yaml", AppConfig); err != nil {
 		log.Printf("Warning: Failed to load config.yaml: %v. Using defaults.", err)
 	}
 
-	// 3. 加载 .env 文件, 这会把 .env 里的值设置到环境变量, 优先于系统环境变量
 	if err := godotenv.Load(); err != nil {
 		log.Printf("Warning: .env file not found, using environment variables")
 	}
 
-	// 4. 使用环境变量覆盖 YAML 的值
-	// 如果环境变量未设置, getEnv 将使用 AppConfig 中已有的值 (来自YAML) 作为默认值
 	AppConfig.Server.Port = getEnv("SERVER_PORT", AppConfig.Server.Port, "8080")
 	AppConfig.Server.ReadTimeout = getEnvAsInt("SERVER_READ_TIMEOUT", AppConfig.Server.ReadTimeout, 15)
 	AppConfig.Server.WriteTimeout = getEnvAsInt("SERVER_WRITE_TIMEOUT", AppConfig.Server.WriteTimeout, 15)
@@ -101,7 +94,6 @@ func Init() error {
 	AppConfig.Ethereum.RPCURL = getEnv("ETH_RPC_URL", AppConfig.Ethereum.RPCURL, "wss://mainnet.infura.io/ws/v3/YOUR-PROJECT-ID")
 	AppConfig.Ethereum.ChainID = getEnvAsInt64("ETH_CHAIN_ID", AppConfig.Ethereum.ChainID, 1)
 
-	// 如果 YAML 中没有 base_tokens, 则使用这里的硬编码默认值
 	defaultBaseTokens := []string{
 		"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
 		"0xdac17f958d2ee523a2206206994597c13d831ec7",
@@ -110,7 +102,6 @@ func Init() error {
 	}
 	AppConfig.BaseTokens = getEnvAsSlice("BASE_TOKENS", ",", AppConfig.BaseTokens, defaultBaseTokens)
 
-	// Performance (注意: YAML 和 Env 变量的 key 可能不同)
 	AppConfig.Performance.MaxConcurrentPaths = getEnvAsInt("MAX_CONCURRENT_PATHS", AppConfig.Performance.MaxConcurrentPaths, 10)
 	AppConfig.Performance.CacheTTL = time.Duration(getEnvAsInt("CACHE_TTL_SECONDS", int(AppConfig.Performance.CacheTTL.Seconds()), 300)) * time.Second
 	AppConfig.Performance.RequestTimeout = time.Duration(getEnvAsInt("REQUEST_TIMEOUT_SECONDS", int(AppConfig.Performance.RequestTimeout.Seconds()), 30)) * time.Second
@@ -122,61 +113,61 @@ func Init() error {
 	return nil
 }
 
-// getEnv (重载) - 如果 envValue 未设置, 使用 yamlValue, 如果 yamlValue 也未设置, 使用 fallback
+// getEnv returns env value if set, otherwise yamlValue if not empty, otherwise fallback.
 func getEnv(key string, yamlValue string, fallback string) string {
 	if value := os.Getenv(key); value != "" {
-		return value // 环境变量优先级最高
+		return value
 	}
 	if yamlValue != "" {
-		return yamlValue // YAML 文件次之
+		return yamlValue
 	}
-	return fallback // 默认值
+	return fallback
 }
 
-// getEnvAsInt (重载)
+// getEnvAsInt returns env int if set, otherwise yamlValue if non-zero, otherwise fallback.
 func getEnvAsInt(key string, yamlValue int, fallback int) int {
 	valueStr := os.Getenv(key)
 	if value, err := strconv.Atoi(valueStr); err == nil {
-		return value // 环境变量
+		return value
 	}
-	if yamlValue != 0 { // 假设 0 不是一个有效的YAML值 (或者根据需要调整)
-		return yamlValue // YAML
+	if yamlValue != 0 {
+		return yamlValue
 	}
-	return fallback // 默认
+	return fallback
 }
 
-// getEnvAsInt64 (重载)
+// getEnvAsInt64 returns env int64 if set, otherwise yamlValue if non-zero, otherwise fallback.
 func getEnvAsInt64(key string, yamlValue int64, fallback int64) int64 {
 	valueStr := os.Getenv(key)
 	if value, err := strconv.ParseInt(valueStr, 10, 64); err == nil {
-		return value // 环境变量
+		return value
 	}
 	if yamlValue != 0 {
-		return yamlValue // YAML
+		return yamlValue
 	}
-	return fallback // 默认
+	return fallback
 }
 
-// getEnvAsFloat (重载)
+// getEnvAsFloat returns env float64 if set, otherwise yamlValue if non-zero, otherwise fallback.
 func getEnvAsFloat(key string, yamlValue float64, fallback float64) float64 {
 	valueStr := os.Getenv(key)
 	if value, err := strconv.ParseFloat(valueStr, 64); err == nil {
-		return value // 环境变量
+		return value
 	}
 	if yamlValue != 0.0 {
-		return yamlValue // YAML
+		return yamlValue
 	}
-	return fallback // 默认
+	return fallback
 }
 
-// getEnvAsSlice (重载)
+// getEnvAsSlice returns env slice if set, otherwise yamlValue if non-empty, otherwise fallback.
 func getEnvAsSlice(key, separator string, yamlValue []string, fallback []string) []string {
 	valueStr := os.Getenv(key)
 	if valueStr != "" {
-		return strings.Split(valueStr, separator) // 环境变量
+		return strings.Split(valueStr, separator)
 	}
 	if len(yamlValue) > 0 {
-		return yamlValue // YAML
+		return yamlValue
 	}
-	return fallback // 默认
+	return fallback
 }

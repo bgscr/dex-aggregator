@@ -17,12 +17,12 @@ type MockPoolCollector struct {
 	exchanges []*types.Exchange
 }
 
-// NewMockPoolCollector 签名已更改: 接收来自配置的 exchanges
+// NewMockPoolCollector signature changed: receives exchanges from config
 func NewMockPoolCollector(cache cache.Store, exchanges []*types.Exchange) *MockPoolCollector {
-	// 移除硬编码的 exchanges
+	// Remove hardcoded exchanges
 	return &MockPoolCollector{
 		cache:     cache,
-		exchanges: exchanges, // 存储从配置中传入的 exchanges
+		exchanges: exchanges, // Store exchanges passed from config
 	}
 }
 
@@ -194,7 +194,7 @@ func (mpc *MockPoolCollector) InitMockPools() error {
 	uniquePools := make(map[string]bool)
 	poolCount := 0
 
-	// 更改: 遍历 mpc.exchanges (来自配置)
+	// Change: Iterate over mpc.exchanges (from config)
 	for _, exchange := range mpc.exchanges {
 		for i, pair := range pairs {
 
@@ -209,8 +209,8 @@ func (mpc *MockPoolCollector) InitMockPools() error {
 
 			pool := &types.Pool{
 				Address:     fmt.Sprintf("%s-%s-%d", strings.ToLower(strings.ReplaceAll(exchange.Name, " ", "")), strings.ToLower(strings.ReplaceAll(pair.name, "/", "-")), i),
-				Exchange:    exchange.Name,    // 使用配置中的 Exchange 名称
-				Version:     exchange.Version, // 使用配置中的 Exchange 版本
+				Exchange:    exchange.Name,    // Use Exchange name from config
+				Version:     exchange.Version, // Use Exchange version from config
 				Token0:      pair.token0,
 				Token1:      pair.token1,
 				Reserve0:    pair.reserve0,

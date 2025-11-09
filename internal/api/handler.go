@@ -188,12 +188,12 @@ func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 			"chain_id": config.AppConfig.Ethereum.ChainID,
 		},
 		"dex": map[string]interface{}{
-			// 更改: BaseTokens 在顶层
+			// Change: BaseTokens is at the top level
 			"base_tokens": config.AppConfig.BaseTokens,
 			"token_count": len(config.AppConfig.BaseTokens),
-			"exchanges":   config.AppConfig.DEX.Exchanges, // 新增: 显示加载的交易所
+			"exchanges":   config.AppConfig.DEX.Exchanges, // Add: Display loaded exchanges
 		},
-		"performance": config.AppConfig.Performance, // 更改: 直接显示整个性能配置
+		"performance": config.AppConfig.Performance, // Change: Display the entire performance config directly
 	}
 
 	w.Header().Set("Content-Type", "application/json")

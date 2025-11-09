@@ -11,7 +11,7 @@ import (
 	"dex-aggregator/internal/api"
 	"dex-aggregator/internal/cache"
 	"dex-aggregator/internal/collector"
-	"dex-aggregator/internal/types" // 确保导入 types
+	"dex-aggregator/internal/types"
 
 	"github.com/gorilla/mux"
 )
@@ -30,7 +30,7 @@ func main() {
 		config.AppConfig.Performance.CacheTTL,
 	)
 
-	// 修复: 将 []types.Exchange 转换为 []*types.Exchange
+	// Fix: Convert []types.Exchange to []*types.Exchange
 	exchangesPtrs := make([]*types.Exchange, len(config.AppConfig.DEX.Exchanges))
 	for i := range config.AppConfig.DEX.Exchanges {
 		exchangesPtrs[i] = &config.AppConfig.DEX.Exchanges[i]
@@ -75,7 +75,7 @@ func main() {
                 <p>Available endpoints:</p>
                 <ul>
                     <li><a href="/api/v1/pools">GET /api/v1/pools</a> - Get all pools</li>
-                    <li><a href="/api/v1/pools/search?tokenA=0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2&tokenB=0xdAC17F958D2ee523a2206206994597C13D831ec7">GET /api/v1/pools/search</a> - Search pools</li>
+                    <li><a href="/api/v1/pools/search?tokenA=0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2&tokenB=0xdAC17F958D2ee523a2206206994597C13D831ec7">GET /api/vI/pools/search</a> - Search pools</li>
                     <li><a href="/config">GET /config</a> - View current configuration</li>
                     <li><a href="/cache/stats">GET /cache/stats</a> - Cache performance</li>
                     <li>POST /api/v1/quote - Quote endpoint</li>
@@ -84,7 +84,7 @@ func main() {
             </body>
         </html>
         `, config.AppConfig.Server.Port, config.AppConfig.Redis.Addr,
-			// 更改: BaseTokens 现在在顶层
+			// Change: BaseTokens is now at the top level
 			len(config.AppConfig.BaseTokens),
 			config.AppConfig.Performance.MaxConcurrentPaths,
 			config.AppConfig.Performance.MaxSlippage)

@@ -3,14 +3,13 @@
 package aggregator
 
 import (
-	// 导入 heap 包
 	"container/heap"
 	"context"
 	"fmt"
 	"log"
 	"math/big"
 	"strings"
-	"sync" // 导入 sync 包
+	"sync"
 
 	"dex-aggregator/internal/cache"
 	"dex-aggregator/internal/types"
@@ -18,34 +17,34 @@ import (
 
 type PathFinder struct {
 	cache     cache.Store
-	priceCalc *PriceCalculator // 1. 添加 PriceCalculator 依赖
+	priceCalc *PriceCalculator // Add PriceCalculator dependency
 	maxHops   int
 
-	// 2. 添加图的内存缓存
+	// Add in-memory cache for the graph
 	graphLock    sync.RWMutex
 	adj          map[string]map[string]bool
 	poolMap      map[string]map[string][]*types.Pool
-	liquidityMap map[string]map[string]*big.Int // 还可以保留这个用于简单的启发
+	liquidityMap map[string]map[string]*big.Int // Can also be kept for simple heuristics
 }
 
-// 3. 更新构造函数
+// Update constructor
 func NewPathFinder(cache cache.Store, priceCalc *PriceCalculator) *PathFinder {
 	pf := &PathFinder{
 		cache:        cache,
-		priceCalc:    priceCalc, // 注入依赖
+		priceCalc:    priceCalc, // Inject dependency
 		maxHops:      3,
 		adj:          make(map[string]map[string]bool),
 		poolMap:      make(map[string]map[string][]*types.Pool),
 		liquidityMap: make(map[string]map[string]*big.Int),
 	}
 
-	// TODO: 在这里启动一个 goroutine 来定期调用 pf.RefreshGraph(context.Background())
+	// TODO: Start a goroutine here to periodically call pf.RefreshGraph(context.Background())
 	// go pf.runGraphRefresher(context.Background())
 
 	return pf
 }
 
-// 4. 新增: 图刷新方法
+// Graph refresh method
 func (pf *PathFinder) RefreshGraph(ctx context.Context) error {
 	log.Println("PathFinder: Refreshing graph from cache...")
 	allPools, err := pf.cache.GetAllPools(ctx)
@@ -53,7 +52,7 @@ func (pf *PathFinder) RefreshGraph(ctx context.Context) error {
 		return fmt.Errorf("failed to get pools for graph refresh: %v", err)
 	}
 
-	// 构建新的图
+	// Build a new graph
 	adj := make(map[string]map[string]bool)
 	poolMap := make(map[string]map[string][]*types.Pool)
 	liquidityMap := make(map[string]map[string]*big.Int)
@@ -96,7 +95,7 @@ func (pf *PathFinder) RefreshGraph(ctx context.Context) error {
 		}
 	}
 
-	// 5. 线程安全地替换旧的图
+	// Thread-safely replace the old graph
 	pf.graphLock.Lock()
 	pf.adj = adj
 	pf.poolMap = poolMap
@@ -107,23 +106,23 @@ func (pf *PathFinder) RefreshGraph(ctx context.Context) error {
 	return nil
 }
 
-// --- 优先队列的实现 (放在 path_finder.go 文件的末尾) ---
+// --- Priority Queue Implementation ---
 
-// pathState 存储在优先队列中的状态
+// pathState stores the state in the priority queue
 type pathState struct {
-	path      []*types.Pool // 到达此点的路径（由Pool组成）
-	amountOut *big.Int      // 到达此点时拥有的token数量
-	lastToken string        // 此路径的最后一个token
-	index     int           // 在 heap 中的索引
+	path      []*types.Pool // Path to this point (composed of Pools)
+	amountOut *big.Int      // Amount of tokens held when reaching this point
+	lastToken string        // Last token in this path
+	index     int           // Index in the heap
 }
 
-// priorityQueue 实现了 heap.Interface
+// priorityQueue implements heap.Interface
 type priorityQueue []*pathState
 
 func (pq priorityQueue) Len() int { return len(pq) }
 
 func (pq priorityQueue) Less(i, j int) bool {
-	// 我们希望是最大堆 (Max-Heap)，所以按 amountOut 降序排列
+	// We want a Max-Heap, so sort by amountOut in descending order
 	return pq[i].amountOut.Cmp(pq[j].amountOut) > 0
 }
 
@@ -144,15 +143,15 @@ func (pq *priorityQueue) Pop() interface{} {
 	old := *pq
 	n := len(old)
 	item := old[n-1]
-	old[n-1] = nil  // 避免内存泄漏
+	old[n-1] = nil  // avoid memory leak
 	item.index = -1 // for safety
 	*pq = old[0 : n-1]
 	return item
 }
 
-// --- 重写 FindBestPaths ---
+// --- Override FindBestPaths ---
 
-// FindBestPaths 寻找最优报价路径
+// FindBestPaths finds the optimal quote paths
 func (pf *PathFinder) FindBestPaths(ctx context.Context, tokenIn, tokenOut string, amountIn *big.Int, maxHops, maxPaths int) ([][]*types.Pool, error) {
 	if maxHops <= 0 {
 		maxHops = pf.maxHops
@@ -164,7 +163,7 @@ func (pf *PathFinder) FindBestPaths(ctx context.Context, tokenIn, tokenOut strin
 	log.Printf("PathFinder: Searching best paths from %s to %s (amountIn: %s, maxHops: %d, maxPaths: %d)",
 		normalizedTokenIn, normalizedTokenOut, amountIn.String(), maxHops, maxPaths)
 
-	// 1. 从缓存的图中读取数据 (使用读锁)
+	// Read data from the cached graph (using read lock)
 	pf.graphLock.RLock()
 	defer pf.graphLock.RUnlock()
 
@@ -179,23 +178,23 @@ func (pf *PathFinder) FindBestPaths(ctx context.Context, tokenIn, tokenOut strin
 
 	var bestPaths [][]*types.Pool
 
-	// 2. 初始化Dijkstra
-	// 优先队列，按 amountOut 排序（最大堆）
+	// Initialize Dijkstra
+	// Priority queue, sorted by amountOut (max-heap)
 	pq := make(priorityQueue, 0)
 	heap.Init(&pq)
 
-	// bestAmountPerToken 记录到达某个token的最高输出量，用于剪枝
+	// bestAmountPerToken records the highest output amount to reach a token, for pruning
 	bestAmountPerToken := make(map[string]*big.Int)
 
-	// 3. 将所有第一跳(hop)的路径加入队列
-	// 遍历 tokenIn 的所有邻居
+	// Add all first-hop paths to the queue
+	// Iterate over all neighbors of tokenIn
 	for neighborToken := range pf.adj[normalizedTokenIn] {
-		// 遍历 tokenIn 和 neighborToken 之间的所有池子
+		// Iterate over all pools between tokenIn and neighborToken
 		for _, pool := range pf.poolMap[normalizedTokenIn][neighborToken] {
-			// 模拟交易，计算第一跳的输出
-			hopAmountOut, err := pf.priceCalc.CalculateOutput(pool, amountIn, normalizedTokenIn) // <--- 修正后
+			// Simulate trade, calculate first hop output
+			hopAmountOut, err := pf.priceCalc.CalculateOutput(pool, amountIn, normalizedTokenIn)
 			if err != nil || hopAmountOut.Cmp(big.NewInt(0)) <= 0 {
-				continue // 交易无效或无输出
+				continue // Invalid trade or no output
 			}
 
 			newState := &pathState{
@@ -211,55 +210,55 @@ func (pf *PathFinder) FindBestPaths(ctx context.Context, tokenIn, tokenOut strin
 		}
 	}
 
-	// 4. 开始Dijkstra搜索
+	// Start Dijkstra search
 	for pq.Len() > 0 && len(bestPaths) < maxPaths {
-		// 弹出当前具有最大 amountOut 的路径
+		// Pop the path with the current maximum amountOut
 		currentState := heap.Pop(&pq).(*pathState)
 
-		// 检查是否是更优路径（剪枝）
-		// 如果我们之前通过更短的路径（或相同长度）找到了到达此token的更优报价，则跳过
+		// Check if it's a better path (pruning)
+		// If we previously found a better quote to this token via a shorter (or same length) path, skip
 		if bestAmount, ok := bestAmountPerToken[currentState.lastToken]; ok {
 			if currentState.amountOut.Cmp(bestAmount) < 0 {
 				continue
 			}
 		}
 
-		// 检查是否到达终点
+		// Check if destination is reached
 		if currentState.lastToken == normalizedTokenOut {
 			bestPaths = append(bestPaths, currentState.path)
-			// 找到一条路径，继续搜索，直到满足 maxPaths
+			// Found a path, continue searching until maxPaths is met
 			continue
 		}
 
-		// 检查是否超过 maxHops
+		// Check if maxHops is exceeded
 		if len(currentState.path) >= maxHops {
 			continue
 		}
 
-		// 5. 探索邻居（下一跳）
+		// Explore neighbors (next hop)
 		currentHopToken := currentState.lastToken
 		currentHopAmountIn := currentState.amountOut
 
 		for nextHopToken := range pf.adj[currentHopToken] {
-			// 避免环路 (简单检查)
+			// Avoid loops (simple check)
 			if pf.pathContainsToken(currentState.path, nextHopToken) {
 				continue
 			}
 
-			// 遍历 currentHopToken 和 nextHopToken 之间的所有池子
+			// Iterate over all pools between currentHopToken and nextHopToken
 			for _, pool := range pf.poolMap[currentHopToken][nextHopToken] {
 
-				// 模拟交易
-				nextHopAmountOut, err := pf.priceCalc.CalculateOutput(pool, currentHopAmountIn, currentHopToken) // <--- 修正后
+				// Simulate trade
+				nextHopAmountOut, err := pf.priceCalc.CalculateOutput(pool, currentHopAmountIn, currentHopToken)
 				if err != nil || nextHopAmountOut.Cmp(big.NewInt(0)) <= 0 {
 					continue
 				}
 
-				// 检查这是否是一条通往 nextHopToken 的更优路径
+				// Check if this is a better path to nextHopToken
 				if bestAmount, ok := bestAmountPerToken[nextHopToken]; !ok || nextHopAmountOut.Cmp(bestAmount) > 0 {
 					bestAmountPerToken[nextHopToken] = nextHopAmountOut
 
-					// 创建新路径
+					// Create new path
 					newPath := make([]*types.Pool, len(currentState.path)+1)
 					copy(newPath, currentState.path)
 					newPath[len(newPath)-1] = pool
@@ -279,10 +278,10 @@ func (pf *PathFinder) FindBestPaths(ctx context.Context, tokenIn, tokenOut strin
 	return bestPaths, nil
 }
 
-// 辅助函数：检查路径是否已包含某个token (避免环路)
+// Helper function: check if path already contains a token (avoid loops)
 func (pf *PathFinder) pathContainsToken(path []*types.Pool, token string) bool {
-	// 简单的环路检查：检查新token是否已在路径中（作为池子的任一端）
-	// 注意: tokenIn 已经在之前的 hop 中了
+	// Simple loop check: check if the new token is already in the path (as either end of a pool)
+	// Note: tokenIn is already in the previous hop
 	for _, pool := range path {
 		if strings.ToLower(pool.Token0.Address) == token || strings.ToLower(pool.Token1.Address) == token {
 			return true

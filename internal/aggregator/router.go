@@ -40,7 +40,7 @@ func (r *Router) GetBestQuote(ctx context.Context, req *types.QuoteRequest) (*ty
 	startTime := time.Now()
 	if err := r.pathFinder.RefreshGraph(ctx); err != nil {
 		log.Printf("WARN: Graph refresh failed during quote: %v", err)
-		// 即使刷新失败，也可能使用旧的图数据继续尝试
+		// Even if the refresh fails, we can still try to continue with the old graph data
 	}
 	log.Printf("Quote request: %s -> %s, amount: %s", req.TokenIn, req.TokenOut, req.AmountIn.String())
 

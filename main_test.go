@@ -60,7 +60,7 @@ func TestConfigInitialization_WithEnvVars(t *testing.T) {
 	assert.Equal(t, 2.5, config.AppConfig.Performance.MaxSlippage)
 	assert.Equal(t, 60*time.Second, config.AppConfig.Performance.CacheTTL)
 
-	// 修复: 检查 config.AppConfig.BaseTokens (顶层)
+	// Check config.AppConfig.BaseTokens (top-level)
 	assert.Equal(t, 4, len(config.AppConfig.BaseTokens))
 	assert.Equal(t, "0xtokenA", config.AppConfig.BaseTokens[0])
 }
